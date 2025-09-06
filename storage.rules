@@ -1,9 +1,22 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow authenticated users to upload and read images
+    // Existujúce pravidlá pre posts
     match /posts/{userId}/{imageId} {
-      allow read: if true; // Anyone can read images
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Nové pravidlá pre chat prílohy
+    match /chat-attachments/{userId}/{fileName} {
+      allow read: if true; // Všetci môžu čítať prílohy v chate
+      allow write: if request.auth != null && request.auth.uid == userId; // Len vlastník môže nahrávať
+      allow delete: if request.auth != null && request.auth.uid == userId; // Len vlastník môže mazať
+    }
+    
+    // Pravidlá pre profilové fotky
+    match /profiles/{userId}/{fileName} {
+      allow read: if true;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
