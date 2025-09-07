@@ -15,11 +15,14 @@ function Chat() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
+  const [isNearBottom, setIsNearBottom] = useState(true);
   const { darkMode } = useTheme();
   const { user } = useAuth();
   const { onlineCount } = useOnlineStatus();
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   
   // Emoji list
   const emojis = ['😀', '😂', '😍', '🤔', '👍', '❤️', '🎉', '🔥', '👏', '😊', '😎', '🤗', '😘', '🥰', '😅', '🙏'];
@@ -30,15 +33,60 @@ function Chat() {
     return /iPhone/.test(ua) && !window.MSStream;
   };
 
-  // Auto-scroll na koniec správ
+  // Detekcia iPad
+  const isIPad = () => {
+    const ua = navigator.userAgent;
+    return /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+
+  // Auto-scroll na koniec správ - vylepšená verzia pre iOS
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current && messagesContainerRef.current) {
+      // Pre iOS zariadenia použijeme setTimeout pre lepšiu kompatibilitu
+      if (isIPhone() || isIPad()) {
+        setTimeout(() => {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+        }, 100);
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  };
+
+  // Detekcia pozície skrolovania
+  const handleScroll = () => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      
+      // Ak je užívateľ blízko spodku (menej ako 100px), považujeme ho za "pri spodku"
+      const nearBottom = distanceFromBottom < 100;
+      setIsNearBottom(nearBottom);
+      
+      // Ak užívateľ skroloval hore, označíme to
+      if (distanceFromBottom > 100) {
+        setUserHasScrolled(true);
+      } else {
+        setUserHasScrolled(false);
+      }
+    }
   };
 
   // Scroll na koniec pri načítaní správ alebo pridaní novej správy
+  // ALE len ak užívateľ neskroloval manuálne
   useEffect(() => {
-    scrollToBottom();
+    if (!userHasScrolled || isNearBottom) {
+      scrollToBottom();
+    }
   }, [messages]);
+
+  // Počiatočný scroll pri načítaní komponenty
+  useEffect(() => {
+    setTimeout(() => {
+      scrollToBottom();
+    }, 200);
+  }, []);
 
   // Zatvorenie emoji pickera pri kliknutí mimo
   useEffect(() => {
@@ -182,6 +230,9 @@ function Chat() {
     if ((!newMessage.trim() && !selectedFile) || !user || loading) return;
 
     setLoading(true);
+    // Reset scroll flag pri odoslaní správy
+    setUserHasScrolled(false);
+    
     try {
       let attachmentData = null;
 
@@ -255,7 +306,7 @@ function Chat() {
   };
 
   return (
-    <div className="h-full flex flex-col max-w-4xl mx-auto">
+    <div className="h-full flex flex-col w-full mx-auto" style={{ maxWidth: '100vw' }}>
       {/* Chat Header */}
       <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b p-4`}>
         <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
@@ -268,41 +319,47 @@ function Chat() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div 
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {messages.map(message => {
           const isMe = user && message.senderUid === user.uid;
           return (
             <div key={message.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex items-start space-x-2 max-w-xs lg:max-w-md ${
+              <div className={`flex items-start space-x-2 max-w-[85%] sm:max-w-xs lg:max-w-md ${
                 isMe ? 'flex-row-reverse space-x-reverse' : ''
               }`}>
                 {!isMe && (
                   <img 
                     src={message.avatar} 
                     alt={message.sender}
-                    className="w-8 h-8 rounded-full mt-1"
+                    className="w-8 h-8 rounded-full mt-1 flex-shrink-0"
                   />
                 )}
-                <div className={`px-4 py-2 rounded-lg ${
+                <div className={`px-3 py-2 rounded-lg ${
                   isMe 
                     ? 'bg-indigo-600 text-white' 
                     : darkMode ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'
-                }`}>
+                } break-words`}>
                   {!isMe && (
                     <p className="text-xs font-semibold mb-1">{message.sender}</p>
                   )}
                   
                   {/* Text správy */}
-                  {message.content && <p>{message.content}</p>}
+                  {message.content && <p className="break-words">{message.content}</p>}
                   
-                  {/* Príloha */}
+                  {/* Príloha - ZMENŠENÉ OBRÁZKY */}
                   {message.attachment && (
                     <div className="mt-2">
                       {message.attachment.type.startsWith('image/') ? (
                         <img 
                           src={message.attachment.url} 
                           alt={message.attachment.name}
-                          className="max-w-full rounded cursor-pointer hover:opacity-90"
+                          className="rounded cursor-pointer hover:opacity-90"
+                          style={{ maxWidth: '200px', maxHeight: '150px', width: 'auto', height: 'auto' }}
                           onClick={() => window.open(message.attachment.url, '_blank')}
                         />
                       ) : (
@@ -338,7 +395,7 @@ function Chat() {
           );
         })}
         {/* Invisible div pre auto-scroll */}
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} style={{ height: '1px' }} />
       </div>
 
       {/* Attachment Preview */}
@@ -386,10 +443,10 @@ function Chat() {
       )}
 
       {/* Input */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-t p-4 relative`}>
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-t p-3 sm:p-4 relative`}>
         {/* Emoji Picker */}
         {showEmojiPicker && (
-          <div className={`emoji-picker-container absolute bottom-20 left-4 right-4 md:left-auto md:right-auto md:w-80 p-3 rounded-lg shadow-lg ${
+          <div className={`emoji-picker-container absolute bottom-20 left-4 right-4 md:left-auto md:right-auto md:w-80 p-3 rounded-lg shadow-lg z-10 ${
             darkMode ? 'bg-gray-700' : 'bg-white border border-gray-200'
           }`}>
             <div className="grid grid-cols-8 gap-2">
@@ -407,7 +464,7 @@ function Chat() {
           </div>
         )}
         
-        <div className="flex space-x-2">
+        <div className="flex space-x-1 sm:space-x-2">
           {/* Hidden file input */}
           <input
             type="file"
@@ -421,7 +478,7 @@ function Chat() {
           {/* Attachment button */}
           <label
             htmlFor="chat-file-input"
-            className={`px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+            className={`px-2 sm:px-3 py-2 rounded-lg cursor-pointer transition-colors flex-shrink-0 ${
               darkMode 
                 ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
                 : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
@@ -437,7 +494,7 @@ function Chat() {
           {/* Emoji button */}
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            className={`emoji-picker-container px-3 py-2 rounded-lg transition-colors ${
+            className={`emoji-picker-container px-2 sm:px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
               darkMode 
                 ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
                 : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
@@ -468,11 +525,11 @@ function Chat() {
               WebkitTapHighlightColor: 'transparent'
             }}
             placeholder="Napíšte správu..."
-            className={`flex-1 px-4 py-2 rounded-lg ${
+            className={`flex-1 px-3 sm:px-4 py-2 rounded-lg ${
               darkMode 
                 ? 'bg-gray-700 text-white placeholder-gray-400' 
                 : 'bg-gray-100 text-gray-800'
-            }`}
+            } min-w-0`}
           />
           
           {/* Send button */}
@@ -480,7 +537,7 @@ function Chat() {
             onClick={sendMessage}
             onTouchStart={() => {}}
             disabled={!user || (!newMessage.trim() && !selectedFile) || loading}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 sm:px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
             style={{ 
               WebkitTapHighlightColor: 'rgba(79, 70, 229, 0.3)',
               touchAction: 'manipulation'
