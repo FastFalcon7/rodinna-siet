@@ -2,22 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db, storage } from '../../firebase/config';
-import {
-  collection,
-  addDoc,
-  query,
-  orderBy,
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
   onSnapshot,
   serverTimestamp,
   updateDoc,
   doc,
   arrayUnion,
-  deleteDoc
+  deleteDoc 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import AttachmentButton from '../Shared/AttachmentButton';
-import ActionMenu from '../Shared/ActionMenu';
-import MediaViewer from '../Shared/MediaViewer';
 
 function Feed() {
   const [posts, setPosts] = useState([]);
@@ -26,12 +23,12 @@ function Feed() {
   const [loading, setLoading] = useState(true);
   const [showComments, setShowComments] = useState({});
   const [newComment, setNewComment] = useState({});
+  const [showPostMenu, setShowPostMenu] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [editContent, setEditContent] = useState('');
-  const [showMediaViewer, setShowMediaViewer] = useState(null);
   const { user } = useAuth();
   const { darkMode } = useTheme();
 
@@ -58,19 +55,33 @@ function Feed() {
     return () => unsubscribe();
   }, []);
 
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showPostMenu && !event.target.closest('.post-menu')) {
+        setShowPostMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showPostMenu]);
+
   const formatTimestamp = (date) => {
     const now = new Date();
     const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-
+    
     if (diffInMinutes < 1) return 'Práve teraz';
     if (diffInMinutes < 60) return `pred ${diffInMinutes} min`;
-
+    
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `pred ${diffInHours} h`;
-
+    
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) return `pred ${diffInDays} dňami`;
-
+    
     return date.toLocaleDateString('sk-SK');
   };
 
@@ -79,12 +90,19 @@ function Feed() {
       try {
         let imageUrl = null;
 
+        // Upload obrázka do Firebase Storage ak je vybratý
         if (selectedImageFile) {
+          console.log('Uploading image:', selectedImageFile.name, selectedImageFile.size);
           const timestamp = Date.now();
           const fileName = `posts/${user.uid}/${timestamp}_${selectedImageFile.name}`;
           const storageRef = ref(storage, fileName);
+          
+          console.log('Storage ref:', fileName);
           const uploadResult = await uploadBytes(storageRef, selectedImageFile);
+          console.log('Upload successful:', uploadResult);
+          
           imageUrl = await getDownloadURL(storageRef);
+          console.log('Download URL:', imageUrl);
         }
 
         const postData = {
@@ -101,9 +119,10 @@ function Feed() {
           comments: [],
           reactions: []
         };
-
+        
         await addDoc(collection(db, 'posts'), postData);
-
+        
+        // Vyčistenie
         setNewPost('');
         if (selectedImage) {
           URL.revokeObjectURL(selectedImage);
@@ -113,6 +132,8 @@ function Feed() {
         setSelectedLocation(null);
       } catch (error) {
         console.error('Error creating post:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         alert(`Chyba pri vytváraní príspevku: ${error.message}`);
       }
     }
@@ -136,33 +157,37 @@ function Feed() {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
-
+      
       img.onload = () => {
         const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
         canvas.width = img.width * ratio;
         canvas.height = img.height * ratio;
-
+        
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob(resolve, 'image/jpeg', quality);
       };
-
+      
       img.src = URL.createObjectURL(file);
     });
   };
 
-  const handleFileSelect = async (file) => {
-    try {
-      if (file.type.startsWith('image/')) {
+  const handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      try {
+        // Kompresia obrázka
         const compressedFile = await compressImage(file);
+        
         setSelectedImageFile(compressedFile);
         const imageUrl = URL.createObjectURL(compressedFile);
         setSelectedImage(imageUrl);
+      } catch (error) {
+        console.error('Error compressing image:', error);
+        // Fallback na originál
+        setSelectedImageFile(file);
+        const imageUrl = URL.createObjectURL(file);
+        setSelectedImage(imageUrl);
       }
-    } catch (error) {
-      console.error('Error compressing image:', error);
-      setSelectedImageFile(file);
-      const imageUrl = URL.createObjectURL(file);
-      setSelectedImage(imageUrl);
     }
   };
 
@@ -176,6 +201,7 @@ function Feed() {
         };
         setSelectedLocation(location);
       }, () => {
+        // Fallback ak geolokácia zlyhá
         const manualLocation = prompt('Zadajte názov lokácie:');
         if (manualLocation) {
           setSelectedLocation({ name: manualLocation });
@@ -233,6 +259,7 @@ function Feed() {
   };
 
   const handleShare = (postId) => {
+    // Simple implementation - copy link to clipboard
     const shareText = `Pozrite si tento príspevok na Rodinnej sieti: ${window.location.href}`;
     if (navigator.share) {
       navigator.share({
@@ -251,6 +278,7 @@ function Feed() {
   const handleEditPost = (post) => {
     setEditingPost(post.id);
     setEditContent(post.content);
+    setShowPostMenu(null);
   };
 
   const handleSaveEdit = async (postId) => {
@@ -283,45 +311,13 @@ function Feed() {
     } catch (error) {
       console.error('Error deleting post:', error);
     }
+
+    setShowPostMenu(null);
   };
 
   const handleReportPost = (postId) => {
     alert('Príspevok bol nahlásený. Ďakujeme za upozornenie.');
-  };
-
-  // Generovanie akcií pre ActionMenu
-  const getPostActions = (post) => {
-    const isOwner = post.author.uid === user.uid;
-
-    if (isOwner) {
-      return [
-        {
-          label: 'Upraviť',
-          icon: 'fas fa-edit',
-          onClick: () => handleEditPost(post)
-        },
-        {
-          label: 'Zmazať',
-          icon: 'fas fa-trash',
-          onClick: () => handleDeletePost(post.id),
-          danger: true
-        }
-      ];
-    } else {
-      return [
-        {
-          label: 'Zdieľať',
-          icon: 'fas fa-share',
-          onClick: () => handleShare(post.id)
-        },
-        {
-          label: 'Nahlásiť',
-          icon: 'fas fa-flag',
-          onClick: () => handleReportPost(post.id),
-          danger: true
-        }
-      ];
-    }
+    setShowPostMenu(null);
   };
 
   if (loading) {
@@ -339,38 +335,37 @@ function Feed() {
 
   return (
     <div className="max-w-2xl mx-auto p-4">
-      {/* Create Post - MODERNÝ DIZAJN */}
-      <div className={`${darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900' : 'bg-gradient-to-br from-white to-gray-50'} rounded-2xl shadow-lg p-6 mb-6 border ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+      {/* Create Post */}
+      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-4 mb-6`}>
         <div className="flex space-x-3">
-          <img
+          <img 
             src={user.avatar}
             alt={user.name}
-            className="w-12 h-12 rounded-full ring-2 ring-indigo-600 ring-offset-2"
+            className="w-10 h-10 rounded-full"
           />
           <div className="flex-1">
             <textarea
               value={newPost}
               onChange={(e) => setNewPost(e.target.value)}
               placeholder="Čo máte na mysli?"
-              className={`w-full p-4 rounded-xl resize-none border ${
-                darkMode
-                  ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
-                  : 'bg-white text-gray-800 border-gray-200'
-              } focus:ring-2 focus:ring-indigo-600 focus:border-transparent transition-all`}
+              className={`w-full p-3 rounded-lg resize-none ${
+                darkMode 
+                  ? 'bg-gray-700 text-white placeholder-gray-400' 
+                  : 'bg-gray-100 text-gray-800'
+              }`}
               rows="3"
             />
-
             {/* Image Preview */}
             {selectedImage && (
               <div className="mt-3 relative">
-                <img
-                  src={selectedImage}
-                  alt="Selected"
-                  className="max-h-48 rounded-xl object-cover"
+                <img 
+                  src={selectedImage} 
+                  alt="Selected" 
+                  className="max-h-40 rounded-lg object-cover"
                 />
                 <button
                   onClick={removeImage}
-                  className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-2 hover:bg-red-700 shadow-lg transition-all"
+                  className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 text-sm hover:bg-red-700"
                 >
                   <i className="fas fa-times"></i>
                 </button>
@@ -379,7 +374,7 @@ function Feed() {
 
             {/* Location Preview */}
             {selectedLocation && (
-              <div className="mt-3 flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/30 rounded-xl p-3">
+              <div className="mt-3 flex items-center justify-between bg-gray-100 dark:bg-gray-700 rounded-lg p-2">
                 <div className="flex items-center space-x-2">
                   <i className="fas fa-map-marker-alt text-indigo-600"></i>
                   <span className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
@@ -395,29 +390,39 @@ function Feed() {
               </div>
             )}
 
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex space-x-2">
-                <AttachmentButton
-                  onFileSelect={handleFileSelect}
-                  acceptTypes="image/*"
-                  variant="icon"
+            <div className="flex items-center justify-between mt-3">
+              <div className="flex space-x-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  id="image-upload"
                 />
-
-                <button
+                <label htmlFor="image-upload" className="text-indigo-600 hover:text-indigo-700 cursor-pointer">
+                  <i className="fas fa-image text-xl"></i>
+                </label>
+                
+                <input
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  id="video-upload"
+                />
+                <label htmlFor="video-upload" className="text-indigo-600 hover:text-indigo-700 cursor-pointer">
+                  <i className="fas fa-video text-xl"></i>
+                </label>
+                
+                <button 
                   onClick={handleLocationSelect}
-                  className={`p-2 rounded-lg transition-colors ${
-                    darkMode
-                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                  }`}
+                  className="text-indigo-600 hover:text-indigo-700"
                 >
-                  <i className="fas fa-map-marker-alt"></i>
+                  <i className="fas fa-map-marker-alt text-xl"></i>
                 </button>
               </div>
               <button
                 onClick={handleCreatePost}
-                disabled={!newPost.trim() && !selectedImage}
-                className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-xl hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-md hover:shadow-lg transition-all"
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
                 Zdieľať
               </button>
@@ -428,47 +433,72 @@ function Feed() {
 
       {/* Posts */}
       {posts.length === 0 ? (
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-sm p-8 text-center`}>
-          <i className="fas fa-newspaper text-5xl text-gray-400 mb-4"></i>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-8 text-center`}>
+          <i className="fas fa-newspaper text-4xl text-gray-400 mb-4"></i>
           <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             Zatiaľ tu nie sú žiadne príspevky. Buďte prvý, kto niečo zdieľa!
           </p>
         </div>
       ) : (
         posts.map(post => (
-        <div key={post.id} className={`${darkMode ? 'bg-gradient-to-br from-gray-800 to-gray-900 border-gray-700' : 'bg-gradient-to-br from-white to-gray-50 border-gray-100'} rounded-2xl shadow-lg hover:shadow-xl mb-6 border transition-all duration-300 animate-fade-in`}>
-          {/* Post Header - KOMPAKTNEJŠÍ */}
-          <div className="p-5">
+        <div key={post.id} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm mb-4 slide-in`}>
+          {/* Post Header */}
+          <div className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <img
-                    src={post.author.avatar}
-                    alt={post.author.name}
-                    className="w-11 h-11 rounded-full ring-2 ring-gray-200 dark:ring-gray-700"
-                  />
-                  {/* Online status indicator (mock) */}
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-white dark:ring-gray-800"></div>
-                </div>
+                <img 
+                  src={post.author.avatar}
+                  alt={post.author.name}
+                  className="w-10 h-10 rounded-full"
+                />
                 <div>
-                  <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                     {post.author.name}
                   </h3>
-                  <p className="text-xs text-gray-500 flex items-center">
+                  <p className="text-sm text-gray-500">
                     {post.timestamp}
-                    {post.location && (
-                      <>
-                        <span className="mx-1">•</span>
-                        <i className="fas fa-map-marker-alt mr-1"></i>
-                        {post.location.name}
-                      </>
-                    )}
                   </p>
                 </div>
               </div>
-
-              {/* NOVÉ: ActionMenu */}
-              <ActionMenu actions={getPostActions(post)} />
+              <div className="relative post-menu">
+                <button 
+                  onClick={() => setShowPostMenu(showPostMenu === post.id ? null : post.id)}
+                  className={`${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  <i className="fas fa-ellipsis-h"></i>
+                </button>
+                
+                {showPostMenu === post.id && (
+                  <div className={`absolute right-0 top-8 ${darkMode ? 'bg-gray-700' : 'bg-white'} rounded-lg shadow-lg border ${darkMode ? 'border-gray-600' : 'border-gray-200'} py-2 min-w-[120px] z-10`}>
+                    {post.author.uid === user.uid ? (
+                      <>
+                        <button 
+                          onClick={() => handleEditPost(post)}
+                          className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
+                        >
+                          <i className="fas fa-edit mr-2"></i>
+                          Upraviť
+                        </button>
+                        <button 
+                          onClick={() => handleDeletePost(post.id)}
+                          className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 text-red-600`}
+                        >
+                          <i className="fas fa-trash mr-2"></i>
+                          Zmazať
+                        </button>
+                      </>
+                    ) : (
+                      <button 
+                        onClick={() => handleReportPost(post.id)}
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 text-red-600`}
+                      >
+                        <i className="fas fa-flag mr-2"></i>
+                        Nahlásiť
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Post Content */}
@@ -477,109 +507,118 @@ function Feed() {
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  className={`w-full p-3 rounded-xl resize-none border ${
-                    darkMode
-                      ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
-                      : 'bg-gray-100 text-gray-800 border-gray-200'
+                  className={`w-full p-3 rounded-lg resize-none ${
+                    darkMode 
+                      ? 'bg-gray-700 text-white placeholder-gray-400' 
+                      : 'bg-gray-100 text-gray-800'
                   }`}
                   rows="3"
                 />
                 <div className="flex space-x-2">
                   <button
                     onClick={() => handleSaveEdit(post.id)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
                   >
                     Uložiť
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium"
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
                   >
                     Zrušiť
                   </button>
                 </div>
               </div>
             ) : (
-              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} leading-relaxed`}>
+              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                 {post.content}
               </p>
             )}
+
+            {/* Post Location */}
+            {post.location && (
+              <div className="mt-3 flex items-center space-x-2 text-sm text-gray-500">
+                <i className="fas fa-map-marker-alt"></i>
+                <span>{post.location.name}</span>
+              </div>
+            )}
           </div>
 
-          {/* Post Image - FULL WIDTH */}
+          {/* Post Image */}
           {post.image && (
-            <img
+            <img 
               src={post.image}
               alt="Post"
-              className="w-full max-h-[500px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
-              onClick={() => setShowMediaViewer({ url: post.image, type: 'image/jpeg' })}
+              className="w-full max-h-96 object-cover"
             />
           )}
 
           {/* Reactions */}
           {post.reactions.length > 0 && (
-            <div className="px-5 pt-3 flex items-center space-x-1">
-              {post.reactions.slice(0, 3).map((emoji, idx) => (
+            <div className="px-4 pt-3 flex items-center space-x-1">
+              {post.reactions.map((emoji, idx) => (
                 <span key={idx} className="text-lg">{emoji}</span>
               ))}
               <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} ml-2`}>
-                {post.likes} {post.likes === 1 ? 'reakcia' : 'reakcií'}
+                {post.likes} reakcií
               </span>
             </div>
           )}
 
-          {/* Actions - ZJEDNODUŠENÉ */}
-          <div className={`px-5 py-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center space-x-4 relative`}>
-            {/* Like button with emoji picker */}
+          {/* Actions */}
+          <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
+            {/* Like button - hide for own posts */}
             {post.author.uid !== user.uid && (
-              <div className="relative flex-1">
-                <button
-                  onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
-                  className={`flex items-center justify-center space-x-2 w-full py-2 rounded-lg transition-colors ${
-                    darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  <i className="far fa-thumbs-up"></i>
-                  <span className="text-sm font-medium">Páči sa mi</span>
-                </button>
-
-                {showEmojiPicker === post.id && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-700 rounded-xl shadow-2xl p-3 flex space-x-2 z-10">
-                    {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => (
-                      <button
-                        key={emoji}
-                        onClick={() => handleReaction(post.id, emoji)}
-                        className="text-2xl hover:scale-125 transition-transform"
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
+              <button 
+                onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
+                className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
+              >
+                <i className="far fa-thumbs-up"></i>
+                <span>Páči sa mi</span>
+              </button>
+            )}
+            
+            {showEmojiPicker === post.id && (
+              <div className="absolute bottom-12 left-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2 flex space-x-2">
+                {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReaction(post.id, emoji)}
+                    className="text-2xl hover:scale-125 transition-transform"
+                  >
+                    {emoji}
+                  </button>
+                ))}
               </div>
             )}
 
-            <button
+            <button 
               onClick={() => toggleComments(post.id)}
-              className={`flex items-center justify-center space-x-2 flex-1 py-2 rounded-lg transition-colors ${
-                darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
-              }`}
+              className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
             >
               <i className="far fa-comment"></i>
-              <span className="text-sm font-medium">
-                Komentovať
-                {post.comments?.length > 0 && ` (${post.comments.length})`}
-              </span>
+              <span>Komentovať</span>
+              {post.comments?.length > 0 && (
+                <span className="text-sm">({post.comments.length})</span>
+              )}
+            </button>
+            
+            <button 
+              onClick={() => handleShare(post.id)}
+              className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
+            >
+              <i className="far fa-share"></i>
+              <span>Zdieľať</span>
             </button>
           </div>
 
           {/* Comments Section */}
           {showComments[post.id] && (
-            <div className={`border-t ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50/50'}`}>
+            <div className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               {/* Add Comment */}
-              <div className="px-5 py-4">
-                <div className="flex space-x-3">
-                  <img
+              <div className="px-4 py-3">
+                <div className="flex space-x-2">
+                  <img 
                     src={user.avatar}
                     alt={user.name}
                     className="w-8 h-8 rounded-full"
@@ -590,17 +629,17 @@ function Feed() {
                       value={newComment[post.id] || ''}
                       onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
                       placeholder="Napíšte komentár..."
-                      className={`flex-1 p-3 rounded-xl text-sm ${
-                        darkMode
-                          ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
-                          : 'bg-white text-gray-800 border-gray-200'
-                      } border focus:ring-2 focus:ring-indigo-600 focus:border-transparent`}
+                      className={`flex-1 p-2 rounded-lg text-sm ${
+                        darkMode 
+                          ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' 
+                          : 'bg-gray-100 text-gray-800 border-gray-200'
+                      } border`}
                       onKeyPress={(e) => e.key === 'Enter' && handleAddComment(post.id)}
                     />
                     <button
                       onClick={() => handleAddComment(post.id)}
                       disabled={!newComment[post.id]?.trim()}
-                      className="px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <i className="fas fa-paper-plane"></i>
                     </button>
@@ -610,26 +649,23 @@ function Feed() {
 
               {/* Existing Comments */}
               {post.comments?.length > 0 && (
-                <div className="px-5 pb-4 space-y-3">
+                <div className="px-4 pb-4">
                   {post.comments.map(comment => (
-                    <div key={comment.id} className="flex space-x-3">
-                      <img
-                        src={`https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author)}&background=random&color=fff`}
-                        alt={comment.author}
-                        className="w-8 h-8 rounded-full flex-shrink-0"
-                      />
-                      <div className="flex-1">
-                        <div className={`${darkMode ? 'bg-gray-700' : 'bg-white'} rounded-xl p-3 shadow-sm`}>
-                          <p className={`font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                            {comment.author}
-                          </p>
-                          <p className={`text-sm mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                            {comment.content}
-                          </p>
+                    <div key={comment.id} className="mt-3">
+                      <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className={`font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                              {comment.author}
+                            </p>
+                            <p className={`text-sm mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {comment.content}
+                            </p>
+                          </div>
+                          <span className="text-xs text-gray-500 ml-2">
+                            {comment.timestamp}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-500 ml-3 mt-1 inline-block">
-                          {comment.timestamp}
-                        </span>
                       </div>
                     </div>
                   ))}
@@ -639,14 +675,6 @@ function Feed() {
           )}
         </div>
         ))
-      )}
-
-      {/* Media Viewer */}
-      {showMediaViewer && (
-        <MediaViewer
-          media={showMediaViewer}
-          onClose={() => setShowMediaViewer(null)}
-        />
       )}
     </div>
   );
