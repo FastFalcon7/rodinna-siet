@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { storage, db } from '../../firebase/config';
@@ -6,6 +6,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { updateUserProfile } from '../../services/userService';
+import { getAllowedEmails, addEmailToWhitelist, removeEmailFromWhitelist } from '../../services/whitelistService';
 
 function Settings() {
   const { darkMode, toggleTheme } = useTheme();
@@ -18,6 +19,27 @@ function Settings() {
   const [initials, setInitials] = useState(getInitialsFromName(user?.name || ''));
   const [avatarBgColor, setAvatarBgColor] = useState('#4F46E5');
   const [loading, setLoading] = useState(false);
+
+  // Admin - whitelist emailov
+  const [allowedEmails, setAllowedEmails] = useState([]);
+  const [newEmail, setNewEmail] = useState('');
+  const [loadingWhitelist, setLoadingWhitelist] = useState(false);
+
+  // Načítaj whitelist ak je používateľ admin
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      loadWhitelist();
+    }
+  }, [user]);
+
+  const loadWhitelist = async () => {
+    try {
+      const emails = await getAllowedEmails();
+      setAllowedEmails(emails);
+    } catch (error) {
+      console.error('Chyba pri načítaní whitelistu:', error);
+    }
+  };
 
   // Funkcia na získanie iniciál z mena
   function getInitialsFromName(name) {
@@ -94,7 +116,7 @@ function Settings() {
     try {
       setLoading(true);
       await updateUserProfile(user.uid, { name: newName });
-      
+
       setEditingName(false);
       window.location.reload();
     } catch (error) {
@@ -102,6 +124,51 @@ function Settings() {
       alert('Chyba pri aktualizácii mena');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Pridanie emailu do whitelistu
+  const handleAddEmail = async () => {
+    if (!newEmail.trim()) return;
+
+    // Validácia emailu
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail)) {
+      alert('Neplatný formát emailu');
+      return;
+    }
+
+    try {
+      setLoadingWhitelist(true);
+      await addEmailToWhitelist(newEmail.trim());
+      await loadWhitelist();
+      setNewEmail('');
+      alert('Email bol pridaný do zoznamu povolených');
+    } catch (error) {
+      console.error('Chyba pri pridávaní emailu:', error);
+      alert('Chyba pri pridávaní emailu');
+    } finally {
+      setLoadingWhitelist(false);
+    }
+  };
+
+  // Odstránenie emailu z whitelistu
+  const handleRemoveEmail = async (email) => {
+    // eslint-disable-next-line no-restricted-globals
+    if (!confirm(`Naozaj chcete odstrániť email ${email} zo zoznamu povolených?`)) {
+      return;
+    }
+
+    try {
+      setLoadingWhitelist(true);
+      await removeEmailFromWhitelist(email);
+      await loadWhitelist();
+      alert('Email bol odstránený zo zoznamu povolených');
+    } catch (error) {
+      console.error('Chyba pri odstraňovaní emailu:', error);
+      alert('Chyba pri odstraňovaní emailu');
+    } finally {
+      setLoadingWhitelist(false);
     }
   };
 
@@ -290,8 +357,98 @@ function Settings() {
         </div>
       </div>
 
+      {/* Admin - Whitelist emailov */}
+      {user?.role === 'admin' && (
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-6 mb-4`}>
+          <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            <i className="fas fa-shield-alt mr-2"></i>
+            Správa prístupov (Admin)
+          </h3>
+
+          <div className="space-y-4">
+            <div>
+              <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Len emaily v tomto zozname môžu vytvárať nové účty. Pridajte emailové adresy členov rodiny.
+              </p>
+
+              {/* Pridanie nového emailu */}
+              <div className="flex space-x-2 mb-4">
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="nova.osoba@email.com"
+                  className={`flex-1 px-4 py-2 rounded-lg border ${
+                    darkMode
+                      ? 'bg-gray-700 text-white border-gray-600'
+                      : 'bg-white text-gray-800 border-gray-300'
+                  }`}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleAddEmail();
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleAddEmail}
+                  disabled={loadingWhitelist}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  <i className="fas fa-plus mr-2"></i>
+                  Pridať
+                </button>
+              </div>
+
+              {/* Zoznam povolených emailov */}
+              <div className={`border rounded-lg ${darkMode ? 'border-gray-600' : 'border-gray-300'}`}>
+                <div className={`px-4 py-2 font-semibold border-b ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300 text-gray-800'}`}>
+                  Povolené emaily ({allowedEmails.length})
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {allowedEmails.length === 0 ? (
+                    <div className={`px-4 py-3 text-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Žiadne povolené emaily
+                    </div>
+                  ) : (
+                    allowedEmails.map((email, index) => (
+                      <div
+                        key={index}
+                        className={`px-4 py-3 flex items-center justify-between border-b last:border-b-0 ${
+                          darkMode ? 'border-gray-700' : 'border-gray-200'
+                        }`}
+                      >
+                        <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                          <i className="fas fa-envelope mr-2 text-indigo-500"></i>
+                          {email}
+                        </span>
+                        <button
+                          onClick={() => handleRemoveEmail(email)}
+                          disabled={loadingWhitelist}
+                          className="text-red-500 hover:text-red-700 disabled:opacity-50"
+                          title="Odstrániť"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className={`p-3 rounded-lg ${darkMode ? 'bg-blue-900 bg-opacity-30' : 'bg-blue-50'}`}>
+              <p className={`text-sm ${darkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+                <i className="fas fa-info-circle mr-2"></i>
+                <strong>Bezpečnosť:</strong> Len používatelia s emailami v tomto zozname môžu vytvoriť účet.
+                Všetky operácie vyžadujú prihlásenie a používatelia môžu upravovať len vlastný obsah.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Logout Button */}
-      <button 
+      <button
         onClick={logout}
         className="w-full px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
       >
