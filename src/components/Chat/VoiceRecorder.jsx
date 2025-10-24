@@ -32,8 +32,13 @@ function VoiceRecorder({ onRecordingComplete, onCancel }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // iPhone Safari compatibility - use supported mimeType
+      const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+      const mimeType = isIOS ? 'audio/mp4' : 'audio/webm;codecs=opus';
+
       const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: mimeType
       });
 
       mediaRecorderRef.current = mediaRecorder;

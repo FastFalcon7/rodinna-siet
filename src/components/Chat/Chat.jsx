@@ -533,6 +533,7 @@ function Chat() {
               {/* Voice button */}
               <button
                 onClick={() => setShowVoiceRecorder(true)}
+                onTouchStart={() => {}}
                 className={`px-2 sm:px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
                   darkMode
                     ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
@@ -556,6 +557,7 @@ function Chat() {
               {/* Emoji button */}
               <button
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                onTouchStart={() => {}}
                 className={`emoji-picker-container px-2 sm:px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
                   darkMode
                     ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
