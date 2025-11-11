@@ -15,9 +15,6 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import AttachmentButton from '../Shared/AttachmentButton';
-import ActionMenu from '../Shared/ActionMenu';
-import MediaViewer from '../Shared/MediaViewer';
 
 function Feed() {
   const [posts, setPosts] = useState([]);
@@ -26,6 +23,7 @@ function Feed() {
   const [loading, setLoading] = useState(true);
   const [showComments, setShowComments] = useState({});
   const [newComment, setNewComment] = useState({});
+  const [showPostMenu, setShowPostMenu] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
@@ -143,6 +141,7 @@ function Feed() {
       try {
         let imageUrl = null;
 
+        // Upload obrázka do Firebase Storage ak je vybratý
         if (selectedImageFile) {
           const timestamp = Date.now();
           const fileName = `posts/${user.uid}/${timestamp}_${selectedImageFile.name}`;
@@ -212,20 +211,23 @@ function Feed() {
     });
   };
 
-  const handleFileSelect = async (file) => {
-    try {
-      if (file.type.startsWith('image/')) {
+  const handleImageUpload = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      try {
+        // Kompresia obrázka
         const compressedFile = await compressImage(file);
 
         setSelectedImageFile(compressedFile);
         const imageUrl = URL.createObjectURL(compressedFile);
         setSelectedImage(imageUrl);
+      } catch (error) {
+        console.error('Error compressing image:', error);
+        // Fallback na originál
+        setSelectedImageFile(file);
+        const imageUrl = URL.createObjectURL(file);
+        setSelectedImage(imageUrl);
       }
-    } catch (error) {
-      console.error('Error compressing image:', error);
-      setSelectedImageFile(file);
-      const imageUrl = URL.createObjectURL(file);
-      setSelectedImage(imageUrl);
     }
   };
 
@@ -239,6 +241,7 @@ function Feed() {
         };
         setSelectedLocation(location);
       }, () => {
+        // Fallback ak geolokácia zlyhá
         const manualLocation = prompt('Zadajte názov lokácie:');
         if (manualLocation) {
           setSelectedLocation({ name: manualLocation });
@@ -296,6 +299,7 @@ function Feed() {
   };
 
   const handleShare = (postId) => {
+    // Simple implementation - copy link to clipboard
     const shareText = `Pozrite si tento príspevok na Rodinnej sieti: ${window.location.href}`;
     if (navigator.share) {
       navigator.share({
@@ -314,6 +318,7 @@ function Feed() {
   const handleEditPost = (post) => {
     setEditingPost(post.id);
     setEditContent(post.content);
+    setShowPostMenu(null);
   };
 
   const handleSaveEdit = async (postId) => {
@@ -346,45 +351,13 @@ function Feed() {
     } catch (error) {
       console.error('Error deleting post:', error);
     }
+
+    setShowPostMenu(null);
   };
 
   const handleReportPost = (postId) => {
     alert('Príspevok bol nahlásený. Ďakujeme za upozornenie.');
-  };
-
-  // Generovanie akcií pre ActionMenu
-  const getPostActions = (post) => {
-    const isOwner = post.author.uid === user.uid;
-
-    if (isOwner) {
-      return [
-        {
-          label: 'Upraviť',
-          icon: 'fas fa-edit',
-          onClick: () => handleEditPost(post)
-        },
-        {
-          label: 'Zmazať',
-          icon: 'fas fa-trash',
-          onClick: () => handleDeletePost(post.id),
-          danger: true
-        }
-      ];
-    } else {
-      return [
-        {
-          label: 'Zdieľať',
-          icon: 'fas fa-share',
-          onClick: () => handleShare(post.id)
-        },
-        {
-          label: 'Nahlásiť',
-          icon: 'fas fa-flag',
-          onClick: () => handleReportPost(post.id),
-          danger: true
-        }
-      ];
-    }
+    setShowPostMenu(null);
   };
 
   if (loading) {
@@ -404,8 +377,8 @@ function Feed() {
     <div className="max-w-2xl mx-auto p-4 pb-20">
       {/* Posts */}
       {posts.length === 0 ? (
-        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-2xl shadow-sm p-8 text-center`}>
-          <i className="fas fa-newspaper text-5xl text-gray-400 mb-4"></i>
+        <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-8 text-center`}>
+          <i className="fas fa-newspaper text-4xl text-gray-400 mb-4"></i>
           <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             Zatiaľ tu nie sú žiadne príspevky. Buďte prvý, kto niečo zdieľa!
           </p>
@@ -429,10 +402,10 @@ function Feed() {
                   className="w-10 h-10 rounded-full"
                 />
                 <div>
-                  <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                     {post.author.name}
                   </h3>
-                  <p className="text-xs text-gray-500 flex items-center">
+                  <p className="text-sm text-gray-500">
                     {post.timestamp}
                   </p>
                 </div>
@@ -473,12 +446,9 @@ function Feed() {
                         Nahlásiť
                       </button>
                     )}
-                  </p>
-                </div>
+                  </div>
+                )}
               </div>
-
-              {/* NOVÉ: ActionMenu */}
-              <ActionMenu actions={getPostActions(post)} />
             </div>
 
             {/* Post Content */}
@@ -497,32 +467,39 @@ function Feed() {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => handleSaveEdit(post.id)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
                   >
                     Uložiť
                   </button>
                   <button
                     onClick={handleCancelEdit}
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm font-medium"
+                    className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
                   >
                     Zrušiť
                   </button>
                 </div>
               </div>
             ) : (
-              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} leading-relaxed`}>
+              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                 {post.content}
               </p>
             )}
+
+            {/* Post Location */}
+            {post.location && (
+              <div className="mt-3 flex items-center space-x-2 text-sm text-gray-500">
+                <i className="fas fa-map-marker-alt"></i>
+                <span>{post.location.name}</span>
+              </div>
+            )}
           </div>
 
-          {/* Post Image - FULL WIDTH */}
+          {/* Post Image */}
           {post.image && (
             <img
               src={post.image}
               alt="Post"
-              className="w-full max-h-[500px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
-              onClick={() => setShowMediaViewer({ url: post.image, type: 'image/jpeg' })}
+              className="w-full max-h-96 object-cover"
             />
           )}
 
@@ -533,14 +510,14 @@ function Feed() {
                 <span key={idx} className="text-lg">{emoji}</span>
               ))}
               <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} ml-2`}>
-                {post.likes} {post.likes === 1 ? 'reakcia' : 'reakcií'}
+                {post.likes} reakcií
               </span>
             </div>
           )}
 
-          {/* Actions - ZJEDNODUŠENÉ */}
-          <div className={`px-5 py-3 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center space-x-4 relative`}>
-            {/* Like button with emoji picker */}
+          {/* Actions */}
+          <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
+            {/* Like button - hide for own posts */}
             {post.author.uid !== user.uid && (
               <button
                 onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
@@ -567,9 +544,7 @@ function Feed() {
 
             <button
               onClick={() => toggleComments(post.id)}
-              className={`flex items-center justify-center space-x-2 flex-1 py-2 rounded-lg transition-colors ${
-                darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-600'
-              }`}
+              className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
             >
               <i className="far fa-comment"></i>
               <span>Komentovať</span>
@@ -589,7 +564,7 @@ function Feed() {
 
           {/* Comments Section */}
           {showComments[post.id] && (
-            <div className={`border-t ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50/50'}`}>
+            <div className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               {/* Add Comment */}
               <div className="px-4 py-3">
                 <div className="flex space-x-2">
@@ -614,7 +589,7 @@ function Feed() {
                     <button
                       onClick={() => handleAddComment(post.id)}
                       disabled={!newComment[post.id]?.trim()}
-                      className="px-4 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <i className="fas fa-paper-plane"></i>
                     </button>
@@ -624,26 +599,23 @@ function Feed() {
 
               {/* Existing Comments */}
               {post.comments?.length > 0 && (
-                <div className="px-5 pb-4 space-y-3">
+                <div className="px-4 pb-4">
                   {post.comments.map(comment => (
-                    <div key={comment.id} className="flex space-x-3">
-                      <img
-                        src={`https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author)}&background=random&color=fff`}
-                        alt={comment.author}
-                        className="w-8 h-8 rounded-full flex-shrink-0"
-                      />
-                      <div className="flex-1">
-                        <div className={`${darkMode ? 'bg-gray-700' : 'bg-white'} rounded-xl p-3 shadow-sm`}>
-                          <p className={`font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                            {comment.author}
-                          </p>
-                          <p className={`text-sm mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                            {comment.content}
-                          </p>
+                    <div key={comment.id} className="mt-3">
+                      <div className={`${darkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className={`font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                              {comment.author}
+                            </p>
+                            <p className={`text-sm mt-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              {comment.content}
+                            </p>
+                          </div>
+                          <span className="text-xs text-gray-500 ml-2">
+                            {comment.timestamp}
+                          </span>
                         </div>
-                        <span className="text-xs text-gray-500 ml-3 mt-1 inline-block">
-                          {comment.timestamp}
-                        </span>
                       </div>
                     </div>
                   ))}
