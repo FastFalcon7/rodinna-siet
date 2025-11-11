@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { db, storage } from '../../firebase/config';
-import { 
-  collection, 
-  addDoc, 
-  query, 
-  orderBy, 
+import {
+  collection,
+  addDoc,
+  query,
+  orderBy,
   onSnapshot,
   serverTimestamp,
   updateDoc,
   doc,
   arrayUnion,
-  deleteDoc 
+  deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -29,8 +29,14 @@ function Feed() {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [editContent, setEditContent] = useState('');
+
+  // Nové stavy pre modal
+  const [showNewPostModal, setShowNewPostModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const { user } = useAuth();
   const { darkMode } = useTheme();
+  const modalRef = useRef(null);
 
   // Load posts from Firestore in real-time
   useEffect(() => {
@@ -69,40 +75,80 @@ function Feed() {
     };
   }, [showPostMenu]);
 
+  // Close modal when clicking outside
+  useEffect(() => {
+    const handleModalClick = (event) => {
+      if (modalRef.current && event.target === modalRef.current) {
+        closeModal();
+      }
+    };
+
+    if (showNewPostModal) {
+      document.addEventListener('mousedown', handleModalClick);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleModalClick);
+    };
+  }, [showNewPostModal]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (showNewPostModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showNewPostModal]);
+
   const formatTimestamp = (date) => {
     const now = new Date();
     const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-    
+
     if (diffInMinutes < 1) return 'Práve teraz';
     if (diffInMinutes < 60) return `pred ${diffInMinutes} min`;
-    
+
     const diffInHours = Math.floor(diffInMinutes / 60);
     if (diffInHours < 24) return `pred ${diffInHours} h`;
-    
+
     const diffInDays = Math.floor(diffInHours / 24);
     if (diffInDays < 7) return `pred ${diffInDays} dňami`;
-    
+
     return date.toLocaleDateString('sk-SK');
+  };
+
+  const openModal = () => {
+    setShowNewPostModal(true);
+  };
+
+  const closeModal = () => {
+    setShowNewPostModal(false);
+    setNewPost('');
+    if (selectedImage) {
+      URL.revokeObjectURL(selectedImage);
+    }
+    setSelectedImage(null);
+    setSelectedImageFile(null);
+    setSelectedLocation(null);
   };
 
   const handleCreatePost = async () => {
     if (newPost.trim()) {
+      setIsSubmitting(true);
       try {
         let imageUrl = null;
 
         // Upload obrázka do Firebase Storage ak je vybratý
         if (selectedImageFile) {
-          console.log('Uploading image:', selectedImageFile.name, selectedImageFile.size);
           const timestamp = Date.now();
           const fileName = `posts/${user.uid}/${timestamp}_${selectedImageFile.name}`;
           const storageRef = ref(storage, fileName);
-          
-          console.log('Storage ref:', fileName);
+
           const uploadResult = await uploadBytes(storageRef, selectedImageFile);
-          console.log('Upload successful:', uploadResult);
-          
           imageUrl = await getDownloadURL(storageRef);
-          console.log('Download URL:', imageUrl);
         }
 
         const postData = {
@@ -119,22 +165,16 @@ function Feed() {
           comments: [],
           reactions: []
         };
-        
+
         await addDoc(collection(db, 'posts'), postData);
-        
-        // Vyčistenie
-        setNewPost('');
-        if (selectedImage) {
-          URL.revokeObjectURL(selectedImage);
-        }
-        setSelectedImage(null);
-        setSelectedImageFile(null);
-        setSelectedLocation(null);
+
+        // Zavretie modalu a vyčistenie
+        closeModal();
       } catch (error) {
         console.error('Error creating post:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
         alert(`Chyba pri vytváraní príspevku: ${error.message}`);
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
@@ -157,16 +197,16 @@ function Feed() {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
-      
+
       img.onload = () => {
         const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
         canvas.width = img.width * ratio;
         canvas.height = img.height * ratio;
-        
+
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         canvas.toBlob(resolve, 'image/jpeg', quality);
       };
-      
+
       img.src = URL.createObjectURL(file);
     });
   };
@@ -177,7 +217,7 @@ function Feed() {
       try {
         // Kompresia obrázka
         const compressedFile = await compressImage(file);
-        
+
         setSelectedImageFile(compressedFile);
         const imageUrl = URL.createObjectURL(compressedFile);
         setSelectedImage(imageUrl);
@@ -334,103 +374,7 @@ function Feed() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      {/* Create Post */}
-      <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-4 mb-6`}>
-        <div className="flex space-x-3">
-          <img 
-            src={user.avatar}
-            alt={user.name}
-            className="w-10 h-10 rounded-full"
-          />
-          <div className="flex-1">
-            <textarea
-              value={newPost}
-              onChange={(e) => setNewPost(e.target.value)}
-              placeholder="Čo máte na mysli?"
-              className={`w-full p-3 rounded-lg resize-none ${
-                darkMode 
-                  ? 'bg-gray-700 text-white placeholder-gray-400' 
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-              rows="3"
-            />
-            {/* Image Preview */}
-            {selectedImage && (
-              <div className="mt-3 relative">
-                <img 
-                  src={selectedImage} 
-                  alt="Selected" 
-                  className="max-h-40 rounded-lg object-cover"
-                />
-                <button
-                  onClick={removeImage}
-                  className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 text-sm hover:bg-red-700"
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-            )}
-
-            {/* Location Preview */}
-            {selectedLocation && (
-              <div className="mt-3 flex items-center justify-between bg-gray-100 dark:bg-gray-700 rounded-lg p-2">
-                <div className="flex items-center space-x-2">
-                  <i className="fas fa-map-marker-alt text-indigo-600"></i>
-                  <span className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                    {selectedLocation.name}
-                  </span>
-                </div>
-                <button
-                  onClick={removeLocation}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between mt-3">
-              <div className="flex space-x-3">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                  id="image-upload"
-                />
-                <label htmlFor="image-upload" className="text-indigo-600 hover:text-indigo-700 cursor-pointer">
-                  <i className="fas fa-image text-xl"></i>
-                </label>
-                
-                <input
-                  type="file"
-                  accept="video/*"
-                  className="hidden"
-                  id="video-upload"
-                />
-                <label htmlFor="video-upload" className="text-indigo-600 hover:text-indigo-700 cursor-pointer">
-                  <i className="fas fa-video text-xl"></i>
-                </label>
-                
-                <button 
-                  onClick={handleLocationSelect}
-                  className="text-indigo-600 hover:text-indigo-700"
-                >
-                  <i className="fas fa-map-marker-alt text-xl"></i>
-                </button>
-              </div>
-              <button
-                onClick={handleCreatePost}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                Zdieľať
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div className="max-w-2xl mx-auto p-4 pb-20">
       {/* Posts */}
       {posts.length === 0 ? (
         <div className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm p-8 text-center`}>
@@ -438,15 +382,21 @@ function Feed() {
           <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             Zatiaľ tu nie sú žiadne príspevky. Buďte prvý, kto niečo zdieľa!
           </p>
+          <button
+            onClick={openModal}
+            className="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+          >
+            Vytvoriť príspevok
+          </button>
         </div>
       ) : (
         posts.map(post => (
-        <div key={post.id} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm mb-4 slide-in`}>
+        <div key={post.id} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm mb-4 overflow-hidden`}>
           {/* Post Header */}
           <div className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <img 
+                <img
                   src={post.author.avatar}
                   alt={post.author.name}
                   className="w-10 h-10 rounded-full"
@@ -461,25 +411,25 @@ function Feed() {
                 </div>
               </div>
               <div className="relative post-menu">
-                <button 
+                <button
                   onClick={() => setShowPostMenu(showPostMenu === post.id ? null : post.id)}
                   className={`${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
                 >
                   <i className="fas fa-ellipsis-h"></i>
                 </button>
-                
+
                 {showPostMenu === post.id && (
                   <div className={`absolute right-0 top-8 ${darkMode ? 'bg-gray-700' : 'bg-white'} rounded-lg shadow-lg border ${darkMode ? 'border-gray-600' : 'border-gray-200'} py-2 min-w-[120px] z-10`}>
                     {post.author.uid === user.uid ? (
                       <>
-                        <button 
+                        <button
                           onClick={() => handleEditPost(post)}
                           className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}
                         >
                           <i className="fas fa-edit mr-2"></i>
                           Upraviť
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDeletePost(post.id)}
                           className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 text-red-600`}
                         >
@@ -488,7 +438,7 @@ function Feed() {
                         </button>
                       </>
                     ) : (
-                      <button 
+                      <button
                         onClick={() => handleReportPost(post.id)}
                         className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600 text-red-600`}
                       >
@@ -508,8 +458,8 @@ function Feed() {
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   className={`w-full p-3 rounded-lg resize-none ${
-                    darkMode 
-                      ? 'bg-gray-700 text-white placeholder-gray-400' 
+                    darkMode
+                      ? 'bg-gray-700 text-white placeholder-gray-400'
                       : 'bg-gray-100 text-gray-800'
                   }`}
                   rows="3"
@@ -546,7 +496,7 @@ function Feed() {
 
           {/* Post Image */}
           {post.image && (
-            <img 
+            <img
               src={post.image}
               alt="Post"
               className="w-full max-h-96 object-cover"
@@ -556,7 +506,7 @@ function Feed() {
           {/* Reactions */}
           {post.reactions.length > 0 && (
             <div className="px-4 pt-3 flex items-center space-x-1">
-              {post.reactions.map((emoji, idx) => (
+              {post.reactions.slice(0, 3).map((emoji, idx) => (
                 <span key={idx} className="text-lg">{emoji}</span>
               ))}
               <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} ml-2`}>
@@ -569,7 +519,7 @@ function Feed() {
           <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
             {/* Like button - hide for own posts */}
             {post.author.uid !== user.uid && (
-              <button 
+              <button
                 onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
                 className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
               >
@@ -577,9 +527,9 @@ function Feed() {
                 <span>Páči sa mi</span>
               </button>
             )}
-            
+
             {showEmojiPicker === post.id && (
-              <div className="absolute bottom-12 left-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2 flex space-x-2">
+              <div className="absolute bottom-12 left-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2 flex space-x-2 z-10">
                 {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => (
                   <button
                     key={emoji}
@@ -592,7 +542,7 @@ function Feed() {
               </div>
             )}
 
-            <button 
+            <button
               onClick={() => toggleComments(post.id)}
               className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
             >
@@ -602,12 +552,12 @@ function Feed() {
                 <span className="text-sm">({post.comments.length})</span>
               )}
             </button>
-            
-            <button 
+
+            <button
               onClick={() => handleShare(post.id)}
               className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
             >
-              <i className="far fa-share"></i>
+              <i className="far fa-share-square"></i>
               <span>Zdieľať</span>
             </button>
           </div>
@@ -618,7 +568,7 @@ function Feed() {
               {/* Add Comment */}
               <div className="px-4 py-3">
                 <div className="flex space-x-2">
-                  <img 
+                  <img
                     src={user.avatar}
                     alt={user.name}
                     className="w-8 h-8 rounded-full"
@@ -630,8 +580,8 @@ function Feed() {
                       onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
                       placeholder="Napíšte komentár..."
                       className={`flex-1 p-2 rounded-lg text-sm ${
-                        darkMode 
-                          ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600' 
+                        darkMode
+                          ? 'bg-gray-700 text-white placeholder-gray-400 border-gray-600'
                           : 'bg-gray-100 text-gray-800 border-gray-200'
                       } border`}
                       onKeyPress={(e) => e.key === 'Enter' && handleAddComment(post.id)}
@@ -676,6 +626,169 @@ function Feed() {
         </div>
         ))
       )}
+
+      {/* Floating Action Button */}
+      <button
+        onClick={openModal}
+        className="fixed bottom-20 md:bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 flex items-center justify-center z-40 transition-all hover:scale-110"
+        style={{
+          WebkitTapHighlightColor: 'rgba(79, 70, 229, 0.3)',
+          touchAction: 'manipulation'
+        }}
+      >
+        <i className="fas fa-plus text-xl"></i>
+      </button>
+
+      {/* New Post Modal */}
+      {showNewPostModal && (
+        <div
+          ref={modalRef}
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end md:items-center justify-center"
+          style={{
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+        >
+          <div
+            className={`${darkMode ? 'bg-gray-800' : 'bg-white'} w-full md:max-w-2xl md:rounded-xl rounded-t-2xl max-h-[90vh] overflow-hidden flex flex-col`}
+            style={{
+              animation: 'slideUp 0.3s ease-out'
+            }}
+          >
+            {/* Modal Header */}
+            <div className={`flex items-center justify-between p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <h2 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                Nový príspevok
+              </h2>
+              <button
+                onClick={closeModal}
+                disabled={isSubmitting}
+                className={`p-2 rounded-full ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'} ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <i className={`fas fa-times ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}></i>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex space-x-3">
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="w-10 h-10 rounded-full"
+                />
+                <div className="flex-1">
+                  <textarea
+                    value={newPost}
+                    onChange={(e) => setNewPost(e.target.value)}
+                    placeholder="Čo máte na mysli?"
+                    className={`w-full p-3 rounded-lg resize-none ${
+                      darkMode
+                        ? 'bg-gray-700 text-white placeholder-gray-400'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                    rows="4"
+                    autoFocus
+                  />
+
+                  {/* Image Preview */}
+                  {selectedImage && (
+                    <div className="mt-3 relative">
+                      <img
+                        src={selectedImage}
+                        alt="Selected"
+                        className="max-h-60 rounded-lg object-cover w-full"
+                      />
+                      <button
+                        onClick={removeImage}
+                        className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-700"
+                      >
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Location Preview */}
+                  {selectedLocation && (
+                    <div className={`mt-3 flex items-center justify-between ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg p-3`}>
+                      <div className="flex items-center space-x-2">
+                        <i className="fas fa-map-marker-alt text-indigo-600"></i>
+                        <span className={`text-sm ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                          {selectedLocation.name}
+                        </span>
+                      </div>
+                      <button
+                        onClick={removeLocation}
+                        className="text-red-600 hover:text-red-700"
+                      >
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex space-x-4">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    id="modal-image-upload"
+                    disabled={isSubmitting}
+                  />
+                  <label
+                    htmlFor="modal-image-upload"
+                    className={`text-indigo-600 hover:text-indigo-700 cursor-pointer ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <i className="fas fa-image text-2xl"></i>
+                  </label>
+
+                  <button
+                    onClick={handleLocationSelect}
+                    disabled={isSubmitting}
+                    className={`text-indigo-600 hover:text-indigo-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <i className="fas fa-map-marker-alt text-2xl"></i>
+                  </button>
+                </div>
+                <button
+                  onClick={handleCreatePost}
+                  disabled={!newPost.trim() || isSubmitting}
+                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    WebkitTapHighlightColor: 'rgba(79, 70, 229, 0.3)',
+                    touchAction: 'manipulation'
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-2"></i>
+                      Zdieľam...
+                    </>
+                  ) : (
+                    'Zdieľať'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
