@@ -9,6 +9,9 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 function Chat() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFilePreview, setSelectedFilePreview] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -32,14 +35,66 @@ function Chat() {
     return /iPhone/.test(ua) && !window.MSStream;
   };
 
-  // Načítanie správ s fallback pre iPhone
+  // Auto-scroll na koniec správ
+  const scrollToBottom = () => {
+    if (messagesEndRef.current && messagesContainerRef.current) {
+      if (isIPhone()) {
+        setTimeout(() => {
+          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+        }, 100);
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  };
+
+  // Detekcia pozície skrolovania
+  const handleScroll = () => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      const nearBottom = distanceFromBottom < 100;
+      setIsNearBottom(nearBottom);
+      setUserHasScrolled(distanceFromBottom > 100);
+    }
+  };
+
   useEffect(() => {
+    if (!userHasScrolled || isNearBottom) {
+      scrollToBottom();
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    setTimeout(() => scrollToBottom(), 200);
+  }, []);
+
+  // Zatvorenie emoji pickera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showEmojiPicker && !event.target.closest('.emoji-picker-container')) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
+
+  // Načítanie správ (s podporou skupín)
+  useEffect(() => {
+    if (!user) return;
+
+    const messagesCollection = activeGroup
+      ? collection(db, 'groups', activeGroup.id, 'messages')
+      : collection(db, 'messages');
+
     if (isIPhone()) {
-      // Fallback: polling namiesto real-time listener pre iPhone
+      // Fallback: polling pre iPhone
       const pollMessages = async () => {
         try {
           const { getDocs } = await import('firebase/firestore');
-          const q = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
+          const q = query(messagesCollection, orderBy('createdAt', 'asc'));
           const snapshot = await getDocs(q);
           const messagesData = snapshot.docs.map(doc => ({
             id: doc.id,
@@ -52,8 +107,6 @@ function Chat() {
           setError('Chyba pri načítavaní (iPhone mode)');
         }
       };
-
-      // Okamžité načítanie
       pollMessages();
 
       // Polling každých 3 sekundy
@@ -105,14 +158,21 @@ function Chat() {
         }
       };
 
-      const unsubscribe = setupListener();
-      return () => {
-        if (typeof unsubscribe === 'function') {
-          unsubscribe();
-        }
+  // Handler pre výber súboru
+  const handleFileSelect = (file) => {
+    setSelectedFile(file);
+
+    // Vytvorenie preview
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSelectedFilePreview(reader.result);
       };
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFilePreview(null);
     }
-  }, [user]);
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -175,6 +235,7 @@ function Chat() {
     }
   };
 
+  // Odoslanie správy
   const sendMessage = async () => {
     if ((newMessage.trim() || selectedImageFile) && user && !loading) {
       setLoading(true);
@@ -236,6 +297,33 @@ function Chat() {
       } finally {
         setLoading(false);
       }
+
+      const messagesCollection = activeGroup
+        ? collection(db, 'groups', activeGroup.id, 'messages')
+        : collection(db, 'messages');
+
+      const messageData = {
+        sender: user.name,
+        senderUid: user.uid,
+        content: newMessage.trim(),
+        attachment: attachmentData,
+        createdAt: serverTimestamp(),
+        avatar: user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=4F46E5&color=fff`
+      };
+
+      await addDoc(messagesCollection, messageData);
+
+      setNewMessage('');
+      removeSelectedFile();
+      setUploadProgress(0);
+      setError(null);
+      setShowEmojiPicker(false);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      setError('Chyba pri odosielaní správy');
+    } finally {
+      setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -314,17 +402,16 @@ function Chat() {
   };
 
   return (
-    <div className="h-full flex flex-col max-w-4xl mx-auto">
-      {/* Chat Header */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b p-4`}>
-        <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
-          Rodinný Chat
-        </h3>
-        <p className="text-sm text-gray-500">{onlineCount} členov online</p>
-        {error && (
-          <p className="text-sm text-red-500 mt-1">⚠️ {error}</p>
-        )}
-      </div>
+    <div className="h-full flex w-full mx-auto" style={{ maxWidth: '100vw' }}>
+      {/* Group List Sidebar (desktop) */}
+      {showGroupList && (
+        <div className="hidden md:block w-64 lg:w-80">
+          <GroupList
+            onSelectGroup={() => {}}
+            onCreateGroup={() => setShowGroupCreator(true)}
+          />
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -455,6 +542,13 @@ function Chat() {
                   )}
                 </div>
               </div>
+              <button
+                onClick={removeSelectedFile}
+                className="text-red-500 hover:text-red-600"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+              >
+                <i className="fas fa-times"></i>
+              </button>
             </div>
           );
         })}
@@ -564,8 +658,88 @@ function Chat() {
             ) : (
               <i className="fas fa-paper-plane"></i>
             )}
-          </button>
-        </div>
+
+            <div className="flex space-x-1 sm:space-x-2">
+              {/* Voice button */}
+              <button
+                onClick={() => setShowVoiceRecorder(true)}
+                onTouchStart={() => {}}
+                className={`px-2 sm:px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
+                  darkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                }`}
+                style={{
+                  WebkitTapHighlightColor: 'rgba(107, 114, 128, 0.3)',
+                  touchAction: 'manipulation'
+                }}
+                title="Nahrať hlasovú správu"
+              >
+                <i className="fas fa-microphone"></i>
+              </button>
+
+              {/* NOVÝ: Unified Attachment Button */}
+              <AttachmentButton
+                onFileSelect={handleFileSelect}
+                variant="menu"
+              />
+
+              {/* Emoji button */}
+              <button
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                onTouchStart={() => {}}
+                className={`emoji-picker-container px-2 sm:px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${
+                  darkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                }`}
+                style={{
+                  WebkitTapHighlightColor: 'rgba(107, 114, 128, 0.3)',
+                  touchAction: 'manipulation'
+                }}
+              >
+                😊
+              </button>
+
+              {/* Message input */}
+              <input
+                type="text"
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                disabled={!user || loading}
+                style={{
+                  WebkitAppearance: 'none',
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+                placeholder="Napíšte správu..."
+                className={`flex-1 px-3 sm:px-4 py-2 rounded-lg ${
+                  darkMode
+                    ? 'bg-gray-700 text-white placeholder-gray-400'
+                    : 'bg-gray-100 text-gray-800'
+                } min-w-0`}
+              />
+
+              {/* Send button */}
+              <button
+                onClick={sendMessage}
+                onTouchStart={() => {}}
+                disabled={!user || (!newMessage.trim() && !selectedFile) || loading}
+                className="px-3 sm:px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                style={{
+                  WebkitTapHighlightColor: 'rgba(79, 70, 229, 0.3)',
+                  touchAction: 'manipulation'
+                }}
+              >
+                {loading ? (
+                  <i className="fas fa-spinner fa-spin"></i>
+                ) : (
+                  <i className="fas fa-paper-plane"></i>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Image lightbox */}

@@ -1,13 +1,15 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { auth } from '../firebase/config';
-import { 
+import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  updateProfile 
+  updateProfile,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { createUserProfile, getUserProfile } from '../services/userService';
+import { isEmailAllowed, initializeWhitelist } from '../services/whitelistService';
 
 const AuthContext = createContext();
 
@@ -74,13 +76,24 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (email, password, name, isFirstUser = false) => {
     try {
+      // Ak je to prvý používateľ, inicializuj whitelist s jeho emailom
+      if (isFirstUser) {
+        await initializeWhitelist(email);
+      } else {
+        // Pre ostatných používateľov skontroluj whitelist
+        const allowed = await isEmailAllowed(email);
+        if (!allowed) {
+          throw new Error('Tento email nie je povolený. Kontaktujte administrátora.');
+        }
+      }
+
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      
+
       // Aktualizuj displayName vo Firebase Auth
       if (name) {
         await updateProfile(user, { displayName: name });
       }
-      
+
       // Vytvor profil v Firestore
       const role = isFirstUser ? 'admin' : 'member';
       await createUserProfile(user.uid, {
@@ -88,7 +101,7 @@ export const AuthProvider = ({ children }) => {
         name: name || 'Používateľ',
         role: role
       });
-      
+
       return user;
     } catch (error) {
       throw error;
@@ -104,12 +117,21 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const resetPassword = async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      throw error;
+    }
+  };
+
   const value = {
     user,
     loading,
     login,
     register,
-    logout
+    logout,
+    resetPassword
   };
 
   return (

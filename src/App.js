@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { OnlineStatusProvider } from './contexts/OnlineStatusContext';
+import { GroupProvider } from './contexts/GroupContext';
 
 // Components
 import LoginScreen from './components/Auth/LoginScreen';
@@ -49,7 +50,9 @@ function App() {
     <AuthProvider>
       <ThemeProvider>
         <OnlineStatusProvider>
-          <AppContent />
+          <GroupProvider>
+            <AppContent />
+          </GroupProvider>
         </OnlineStatusProvider>
       </ThemeProvider>
     </AuthProvider>
