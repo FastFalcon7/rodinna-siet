@@ -24,11 +24,13 @@ function Feed() {
   const [showComments, setShowComments] = useState({});
   const [newComment, setNewComment] = useState({});
   const [showPostMenu, setShowPostMenu] = useState(null);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [selectedMediaFile, setSelectedMediaFile] = useState(null);
+  const [mediaType, setMediaType] = useState(null); // 'image' or 'video'
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [editingPost, setEditingPost] = useState(null);
   const [editContent, setEditContent] = useState('');
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
 
   // Nové stavy pre modal
   const [showNewPostModal, setShowNewPostModal] = useState(false);
@@ -37,6 +39,9 @@ function Feed() {
   const { user } = useAuth();
   const { darkMode } = useTheme();
   const modalRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const videoInputRef = useRef(null);
+  const attachmentMenuRef = useRef(null);
 
   // Load posts from Firestore in real-time
   useEffect(() => {
@@ -104,6 +109,21 @@ function Feed() {
     };
   }, [showNewPostModal]);
 
+  // Close attachment menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target)) {
+        setShowAttachmentMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
   const formatTimestamp = (date) => {
     const now = new Date();
     const diffInMinutes = Math.floor((now - date) / (1000 * 60));
@@ -127,28 +147,33 @@ function Feed() {
   const closeModal = () => {
     setShowNewPostModal(false);
     setNewPost('');
-    if (selectedImage) {
-      URL.revokeObjectURL(selectedImage);
+    if (selectedMedia) {
+      URL.revokeObjectURL(selectedMedia);
     }
-    setSelectedImage(null);
-    setSelectedImageFile(null);
+    setSelectedMedia(null);
+    setSelectedMediaFile(null);
+    setMediaType(null);
     setSelectedLocation(null);
+    setShowAttachmentMenu(false);
   };
 
   const handleCreatePost = async () => {
     if (newPost.trim()) {
       setIsSubmitting(true);
       try {
-        let imageUrl = null;
+        let mediaUrl = null;
+        let uploadedMediaType = null;
 
-        // Upload obrázka do Firebase Storage ak je vybratý
-        if (selectedImageFile) {
+        // Upload media do Firebase Storage ak je vybratý
+        if (selectedMediaFile) {
           const timestamp = Date.now();
-          const fileName = `posts/${user.uid}/${timestamp}_${selectedImageFile.name}`;
+          const fileExt = selectedMediaFile.name?.split('.').pop() || (mediaType === 'video' ? 'mp4' : 'jpg');
+          const fileName = `posts/${user.uid}/${timestamp}_${mediaType}.${fileExt}`;
           const storageRef = ref(storage, fileName);
 
-          const uploadResult = await uploadBytes(storageRef, selectedImageFile);
-          imageUrl = await getDownloadURL(storageRef);
+          await uploadBytes(storageRef, selectedMediaFile);
+          mediaUrl = await getDownloadURL(storageRef);
+          uploadedMediaType = mediaType;
         }
 
         const postData = {
@@ -158,7 +183,8 @@ function Feed() {
             uid: user.uid
           },
           content: newPost,
-          image: imageUrl,
+          image: uploadedMediaType === 'image' ? mediaUrl : null,
+          video: uploadedMediaType === 'video' ? mediaUrl : null,
           location: selectedLocation,
           createdAt: serverTimestamp(),
           likes: 0,
@@ -181,19 +207,43 @@ function Feed() {
 
   const handleReaction = async (postId, emoji) => {
     try {
-      const postRef = doc(db, 'posts', postId);
-      await updateDoc(postRef, {
-        reactions: arrayUnion(emoji),
-        likes: posts.find(p => p.id === postId)?.likes + 1 || 1
-      });
+      // Close picker immediately
       setShowEmojiPicker(null);
+
+      const postRef = doc(db, 'posts', postId);
+
+      // Find the post to check existing reactions
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      // Check if user already reacted with this emoji
+      const existingReaction = post.reactions?.find(
+        r => r.userId === user.uid && r.emoji === emoji
+      );
+
+      if (existingReaction) {
+        // User already reacted with this emoji, don't add duplicate
+        return;
+      }
+
+      const reaction = {
+        emoji: emoji,
+        userId: user.uid,
+        userName: user.name
+      };
+
+      await updateDoc(postRef, {
+        reactions: arrayUnion(reaction),
+        likes: (post.likes || 0) + 1
+      });
+
     } catch (error) {
       console.error('Error adding reaction:', error);
     }
   };
 
   const compressImage = (file, maxWidth = 800, quality = 0.8) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
@@ -204,31 +254,52 @@ function Feed() {
         canvas.height = img.height * ratio;
 
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(resolve, 'image/jpeg', quality);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const compressedFile = new File([blob], file.name || 'image.jpg', {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            resolve(compressedFile);
+          } else {
+            reject(new Error('Failed to compress image'));
+          }
+        }, 'image/jpeg', quality);
       };
 
+      img.onerror = () => reject(new Error('Failed to load image'));
       img.src = URL.createObjectURL(file);
     });
   };
 
-  const handleImageUpload = async (event) => {
+  const handleMediaSelect = async (event, type) => {
     const file = event.target.files[0];
     if (file) {
-      try {
-        // Kompresia obrázka
-        const compressedFile = await compressImage(file);
+      setShowAttachmentMenu(false);
 
-        setSelectedImageFile(compressedFile);
-        const imageUrl = URL.createObjectURL(compressedFile);
-        setSelectedImage(imageUrl);
-      } catch (error) {
-        console.error('Error compressing image:', error);
-        // Fallback na originál
-        setSelectedImageFile(file);
-        const imageUrl = URL.createObjectURL(file);
-        setSelectedImage(imageUrl);
+      if (type === 'image') {
+        try {
+          const compressedFile = await compressImage(file);
+          setSelectedMediaFile(compressedFile);
+          const mediaUrl = URL.createObjectURL(compressedFile);
+          setSelectedMedia(mediaUrl);
+          setMediaType('image');
+        } catch (error) {
+          console.error('Error compressing image:', error);
+          setSelectedMediaFile(file);
+          const mediaUrl = URL.createObjectURL(file);
+          setSelectedMedia(mediaUrl);
+          setMediaType('image');
+        }
+      } else if (type === 'video') {
+        setSelectedMediaFile(file);
+        const mediaUrl = URL.createObjectURL(file);
+        setSelectedMedia(mediaUrl);
+        setMediaType('video');
       }
     }
+    // Reset file input
+    event.target.value = '';
   };
 
   const handleLocationSelect = () => {
@@ -255,11 +326,12 @@ function Feed() {
     }
   };
 
-  const removeImage = () => {
-    if (selectedImage) {
-      URL.revokeObjectURL(selectedImage);
-      setSelectedImage(null);
-      setSelectedImageFile(null);
+  const removeMedia = () => {
+    if (selectedMedia) {
+      URL.revokeObjectURL(selectedMedia);
+      setSelectedMedia(null);
+      setSelectedMediaFile(null);
+      setMediaType(null);
     }
   };
 
@@ -358,6 +430,25 @@ function Feed() {
   const handleReportPost = (postId) => {
     alert('Príspevok bol nahlásený. Ďakujeme za upozornenie.');
     setShowPostMenu(null);
+  };
+
+  const groupReactions = (reactions) => {
+    if (!reactions || reactions.length === 0) return [];
+
+    const grouped = {};
+    reactions.forEach(reaction => {
+      if (grouped[reaction.emoji]) {
+        grouped[reaction.emoji].push(reaction.userName);
+      } else {
+        grouped[reaction.emoji] = [reaction.userName];
+      }
+    });
+
+    return Object.entries(grouped).map(([emoji, users]) => ({
+      emoji,
+      count: users.length,
+      users
+    }));
   };
 
   if (loading) {
@@ -494,7 +585,7 @@ function Feed() {
             )}
           </div>
 
-          {/* Post Image */}
+          {/* Post Media */}
           {post.image && (
             <img
               src={post.image}
@@ -502,18 +593,34 @@ function Feed() {
               className="w-full max-h-96 object-cover"
             />
           )}
+          {post.video && (
+            <video
+              src={post.video}
+              controls
+              className="w-full max-h-96"
+            />
+          )}
 
           {/* Reactions */}
-          {post.reactions.length > 0 && (
-            <div className="px-4 pt-3 flex items-center space-x-1">
-              {post.reactions.slice(0, 3).map((emoji, idx) => (
-                <span key={idx} className="text-lg">{emoji}</span>
-              ))}
-              <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'} ml-2`}>
-                {post.likes} reakcií
-              </span>
-            </div>
-          )}
+          {post.reactions && post.reactions.length > 0 && (() => {
+            const groupedReactions = groupReactions(post.reactions);
+            return groupedReactions.length > 0 && (
+              <div className="px-4 pt-3 flex items-center flex-wrap gap-2">
+                {groupedReactions.map(({ emoji, count, users }) => (
+                  <div
+                    key={emoji}
+                    className={`flex items-center space-x-1 px-2 py-1 rounded-full ${
+                      darkMode ? 'bg-gray-700' : 'bg-gray-200'
+                    }`}
+                    title={users.join(', ')}
+                  >
+                    <span className="text-lg">{emoji}</span>
+                    <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{count}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Actions */}
           <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
@@ -690,16 +797,24 @@ function Feed() {
                     autoFocus
                   />
 
-                  {/* Image Preview */}
-                  {selectedImage && (
+                  {/* Media Preview */}
+                  {selectedMedia && (
                     <div className="mt-3 relative">
-                      <img
-                        src={selectedImage}
-                        alt="Selected"
-                        className="max-h-60 rounded-lg object-cover w-full"
-                      />
+                      {mediaType === 'image' ? (
+                        <img
+                          src={selectedMedia}
+                          alt="Selected"
+                          className="max-h-60 rounded-lg object-cover w-full"
+                        />
+                      ) : (
+                        <video
+                          src={selectedMedia}
+                          controls
+                          className="max-h-60 rounded-lg w-full"
+                        />
+                      )}
                       <button
-                        onClick={removeImage}
+                        onClick={removeMedia}
                         className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-700"
                       >
                         <i className="fas fa-times"></i>
@@ -731,29 +846,102 @@ function Feed() {
             {/* Modal Footer */}
             <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               <div className="flex items-center justify-between">
-                <div className="flex space-x-4">
+                {/* Attachment menu */}
+                <div className="relative" ref={attachmentMenuRef}>
+                  {/* Hidden file inputs */}
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={handleImageUpload}
+                    onChange={(e) => handleMediaSelect(e, 'image')}
                     className="hidden"
-                    id="modal-image-upload"
+                    ref={fileInputRef}
                     disabled={isSubmitting}
                   />
-                  <label
-                    htmlFor="modal-image-upload"
-                    className={`text-indigo-600 hover:text-indigo-700 cursor-pointer ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <i className="fas fa-image text-2xl"></i>
-                  </label>
-
-                  <button
-                    onClick={handleLocationSelect}
+                  <input
+                    type="file"
+                    accept="video/*"
+                    onChange={(e) => handleMediaSelect(e, 'video')}
+                    className="hidden"
+                    ref={videoInputRef}
                     disabled={isSubmitting}
-                    className={`text-indigo-600 hover:text-indigo-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  />
+
+                  {/* + Button */}
+                  <button
+                    onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+                    disabled={isSubmitting}
+                    className={`p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:hover:bg-gray-700 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    style={{
+                      WebkitTapHighlightColor: 'transparent',
+                      touchAction: 'manipulation'
+                    }}
                   >
-                    <i className="fas fa-map-marker-alt text-2xl"></i>
+                    <i className="fas fa-plus text-2xl"></i>
                   </button>
+
+                  {/* Dropdown menu */}
+                  {showAttachmentMenu && (
+                    <div className={`absolute bottom-full mb-2 left-0 ${
+                      darkMode ? 'bg-gray-700' : 'bg-white'
+                    } rounded-lg shadow-xl border ${
+                      darkMode ? 'border-gray-600' : 'border-gray-200'
+                    } py-2 min-w-[220px] z-20`}>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isSubmitting}
+                        className={`w-full text-left px-4 py-3 flex items-center space-x-3 ${
+                          darkMode ? 'hover:bg-gray-600 text-white' : 'hover:bg-gray-100 text-gray-800'
+                        } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        style={{
+                          WebkitTapHighlightColor: 'transparent',
+                          touchAction: 'manipulation'
+                        }}
+                      >
+                        <i className="fas fa-image text-lg text-blue-500"></i>
+                        <span>Fotka</span>
+                      </button>
+                      <button
+                        onClick={() => videoInputRef.current?.click()}
+                        disabled={isSubmitting}
+                        className={`w-full text-left px-4 py-3 flex items-center space-x-3 ${
+                          darkMode ? 'hover:bg-gray-600 text-white' : 'hover:bg-gray-100 text-gray-800'
+                        } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        style={{
+                          WebkitTapHighlightColor: 'transparent',
+                          touchAction: 'manipulation'
+                        }}
+                      >
+                        <i className="fas fa-video text-lg text-purple-500"></i>
+                        <span>Video</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowAttachmentMenu(false);
+                          handleLocationSelect();
+                        }}
+                        disabled={isSubmitting}
+                        className={`w-full text-left px-4 py-3 flex items-center space-x-3 ${
+                          darkMode ? 'hover:bg-gray-600 text-white' : 'hover:bg-gray-100 text-gray-800'
+                        } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        style={{
+                          WebkitTapHighlightColor: 'transparent',
+                          touchAction: 'manipulation'
+                        }}
+                      >
+                        <i className="fas fa-map-marker-alt text-lg text-red-500"></i>
+                        <span>Poloha</span>
+                      </button>
+                      <button
+                        disabled
+                        className={`w-full text-left px-4 py-3 flex items-center space-x-3 opacity-50 cursor-not-allowed ${
+                          darkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                      >
+                        <i className="fas fa-file text-lg text-green-500"></i>
+                        <span>Súbor (čoskoro)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={handleCreatePost}
