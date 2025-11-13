@@ -103,3 +103,30 @@ The application uses React Context API for global state management:
 - Testing files should follow `*.test.js` or `*.spec.js` pattern
 - Tests run in watch mode during development
 
+## Verziovanie aplikácie
+
+Verzia aplikácie sa zobrazuje v hlavnom menu pod "Naša Rodina" (Desktop sidebar aj Mobile hamburger menu).
+
+### Pravidlá verziovania:
+- **Formát:** `v` + 4-miestne číslo (v0001, v0002, v0003, ...)
+- **Každá zmena/deploy = +1 verzia** (aj menšie zmeny dostávajú vlastné číslo verzie)
+- Verzia sa aktualizuje v súbore `src/components/Shared/Layout.jsx` (konštanta `APP_VERSION`)
+- Pri každom commite a deploy je **POVINNÉ** zvýšiť číslo verzie
+
+### Postup pri zmene verzie:
+1. Uprav `APP_VERSION` v `src/components/Shared/Layout.jsx` (napr. z 'v0001' na 'v0002')
+2. Commit s popisom zmien vrátane zmeny verzie
+3. Build (`npm run build`)
+4. Deploy (`firebase deploy`)
+5. Verifikuj novú verziu v aplikácii (v hamburger menu alebo desktop sidebar)
+
+### Príklady:
+- Aktuálna verzia: `v0.01` (prechodná verzia)
+- Ďalšia verzia: `v0001` (nový systém verziovania)
+- Potom: `v0002`, `v0003`, `v0004`, atď.
+
+### Dôležité:
+- **NIKDY nepreskoč číslo verzie** - vždy +1 od poslednej
+- Verzia musí byť viditeľná pre používateľov v aplikácii
+- Pri každej zmene kódu musí byť aktualizovaná verzia pred deployom
+
