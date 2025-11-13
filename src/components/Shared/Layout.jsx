@@ -3,6 +3,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useLocation, Link } from 'react-router-dom';
 
+const APP_VERSION = 'v0.01';
+
 function Layout({ children }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const { user } = useAuth();
@@ -57,10 +59,15 @@ function Sidebar({ className = "" }) {
     <div className={`${className} w-64 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-sm flex-col`}>
       {/* Logo */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center`}>
-          <i className="fas fa-home text-indigo-600 mr-2"></i>
-          Naša Rodina
-        </h1>
+        <div>
+          <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center`}>
+            <i className="fas fa-home text-indigo-600 mr-2"></i>
+            Naša Rodina
+          </h1>
+          <p className={`text-xs mt-1 ml-7 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+            {APP_VERSION}
+          </p>
+        </div>
       </div>
 
       {/* Navigation */}
@@ -222,10 +229,15 @@ function MobileMenu({ setShowMobileMenu }) {
       <div className={`fixed left-0 top-0 bottom-0 w-64 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center`}>
-            <i className="fas fa-home text-indigo-600 mr-2"></i>
-            Naša Rodina
-          </h1>
+          <div>
+            <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} flex items-center`}>
+              <i className="fas fa-home text-indigo-600 mr-2"></i>
+              Naša Rodina
+            </h1>
+            <p className={`text-xs mt-1 ml-7 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+              {APP_VERSION}
+            </p>
+          </div>
           <button
             onClick={() => setShowMobileMenu(false)}
             className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-600'}`}

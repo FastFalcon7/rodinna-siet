@@ -409,9 +409,9 @@ function Chat() {
   };
 
   return (
-    <div className="h-full flex flex-col max-w-4xl mx-auto">
+    <div className="h-full flex flex-col max-w-4xl mx-auto w-full overflow-x-hidden">
       {/* Chat Header */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b p-4`}>
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b p-4 w-full`}>
         <h3 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
           Rodinný Chat
         </h3>
@@ -425,7 +425,8 @@ function Chat() {
       <div
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-3 w-full"
+        style={{ maxWidth: '100vw' }}
       >
         {messages.map(message => {
           const isMe = user && message.senderUid === user.uid;
@@ -575,7 +576,7 @@ function Chat() {
 
       {/* Reply preview bar */}
       {replyTo && (
-        <div className={`px-4 py-2 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
+        <div className={`px-4 py-2 border-t w-full ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <p className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -597,7 +598,7 @@ function Chat() {
 
       {/* Media preview */}
       {selectedMedia && (
-        <div className={`px-4 py-2 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
+        <div className={`px-4 py-2 border-t w-full ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
           <div className="relative inline-block">
             {mediaType === 'image' ? (
               <img
@@ -623,8 +624,8 @@ function Chat() {
       )}
 
       {/* Input */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-t p-4`}>
-        <div className="flex items-end space-x-2">
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-t p-4 w-full`}>
+        <div className="flex items-end space-x-2 w-full">
           {/* Hidden file inputs */}
           <input
             type="file"

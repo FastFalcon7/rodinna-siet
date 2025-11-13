@@ -8,7 +8,7 @@ service firebase.storage {
     }
     
     // Nové pravidlá pre chat prílohy
-    match /chat-attachments/{userId}/{fileName} {
+    match /chat/{userId}/{fileName} {
       allow read: if true; // Všetci môžu čítať prílohy v chate
       allow write: if request.auth != null && request.auth.uid == userId; // Len vlastník môže nahrávať
       allow delete: if request.auth != null && request.auth.uid == userId; // Len vlastník môže mazať
