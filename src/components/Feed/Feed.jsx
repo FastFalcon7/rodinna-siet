@@ -125,6 +125,19 @@ function Feed() {
     };
   }, []);
 
+  // Close emoji picker on ESC key
+  useEffect(() => {
+    const handleEscKey = (event) => {
+      if (event.key === 'Escape' && showEmojiPicker) {
+        setShowEmojiPicker(null);
+      }
+    };
+    document.addEventListener('keydown', handleEscKey);
+    return () => {
+      document.removeEventListener('keydown', handleEscKey);
+    };
+  }, [showEmojiPicker]);
+
   const formatTimestamp = (date) => {
     const now = new Date();
     const diffInMinutes = Math.floor((now - date) / (1000 * 60));
@@ -206,14 +219,19 @@ function Feed() {
     }
   };
 
-  const handleLongPressStart = (postId) => {
+  const handleLongPressStart = (e, postId) => {
+    // Prevent iOS text selection menu
+    e.preventDefault();
+
     const timer = setTimeout(() => {
       setShowEmojiPicker(postId);
     }, 500); // 500ms pre long press
     setLongPressTimer(timer);
   };
 
-  const handleLongPressEnd = () => {
+  const handleLongPressEnd = (e) => {
+    if (e) e.preventDefault();
+
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       setLongPressTimer(null);
@@ -254,6 +272,7 @@ function Feed() {
 
     } catch (error) {
       console.error('Error adding reaction:', error);
+      alert('Chyba pri pridávaní reakcie. Skúste to znova.');
     }
   };
 
@@ -502,13 +521,16 @@ function Feed() {
         <div key={post.id} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm mb-4 overflow-hidden`}>
           {/* Long press wrapper - len pre cudzích užívateľov */}
           <div
-            onTouchStart={post.author.uid !== user.uid ? () => handleLongPressStart(post.id) : undefined}
+            onTouchStart={post.author.uid !== user.uid ? (e) => handleLongPressStart(e, post.id) : undefined}
             onTouchEnd={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
-            onMouseDown={post.author.uid !== user.uid ? () => handleLongPressStart(post.id) : undefined}
+            onMouseDown={post.author.uid !== user.uid ? (e) => handleLongPressStart(e, post.id) : undefined}
             onMouseUp={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
             onMouseLeave={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
+            onContextMenu={post.author.uid !== user.uid ? (e) => e.preventDefault() : undefined}
             style={post.author.uid !== user.uid ? {
               WebkitTapHighlightColor: 'transparent',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
               touchAction: 'manipulation',
               userSelect: 'none'
             } : {}}
@@ -654,23 +676,34 @@ function Feed() {
 
           {/* Emoji Picker - zobrazí sa po long press (len pre cudzích užívateľov) */}
           {showEmojiPicker === post.id && post.author.uid !== user.uid && (
-            <div className="px-4 pt-2 relative">
-              <div className="bg-white dark:bg-gray-700 rounded-lg shadow-xl p-2 flex space-x-2 z-20 border border-gray-200 dark:border-gray-600 inline-flex">
-                {['👍', '❤️', '😂', '😮', '😢', '👏', '🎉'].map(emoji => (
-                  <button
-                    key={emoji}
-                    onClick={() => handleReaction(post.id, emoji)}
-                    className="text-2xl hover:scale-125 transition-transform"
-                    style={{
-                      WebkitTapHighlightColor: 'transparent',
-                      touchAction: 'manipulation'
-                    }}
-                  >
-                    {emoji}
-                  </button>
-                ))}
+            <>
+              {/* Overlay - zatvorí picker pri kliknutí */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowEmojiPicker(null)}
+                style={{
+                  WebkitTapHighlightColor: 'transparent'
+                }}
+              />
+              {/* Emoji Picker */}
+              <div className="px-4 pt-2 relative">
+                <div className="bg-white dark:bg-gray-700 rounded-lg shadow-xl p-2 flex space-x-2 z-50 border border-gray-200 dark:border-gray-600 inline-flex relative">
+                  {['👍', '❤️', '😂', '😮', '😢', '👏', '🎉'].map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => handleReaction(post.id, emoji)}
+                      className="text-2xl hover:scale-125 transition-transform"
+                      style={{
+                        WebkitTapHighlightColor: 'transparent',
+                        touchAction: 'manipulation'
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            </>
           )}
           </div>
           {/* End of long press wrapper */}

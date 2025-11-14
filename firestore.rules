@@ -24,8 +24,11 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null &&
-        (resource.data.userId == request.auth.uid ||
+      // Update pre reakcie a komentáre - povoliť všetkým autentifikovaným
+      // Delete len vlastník alebo admin
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null &&
+        (resource.data.author.uid == request.auth.uid ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 

@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useLocation, Link } from 'react-router-dom';
 
-const APP_VERSION = 'v0002';
+const APP_VERSION = 'v0003';
 
 function Layout({ children }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -115,7 +115,7 @@ function Sidebar({ className = "" }) {
 // Header Component
 function Header({ setShowMobileMenu }) {
   const { user, logout } = useAuth();
-  const { darkMode, toggleDarkMode } = useTheme();
+  const { darkMode, toggleTheme } = useTheme();
 
   return (
     <header className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} shadow-sm border-b`}>
@@ -140,7 +140,7 @@ function Header({ setShowMobileMenu }) {
         <div className="hidden md:flex items-center space-x-4 ml-auto">
           {/* Theme Toggle */}
           <button
-            onClick={toggleDarkMode}
+            onClick={toggleTheme}
             className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700 text-white' : 'hover:bg-gray-100 text-gray-600'}`}
           >
             <i className={`fas ${darkMode ? 'fa-sun' : 'fa-moon'}`}></i>
@@ -211,7 +211,7 @@ function MobileNav() {
 // Mobile Menu Component
 function MobileMenu({ setShowMobileMenu }) {
   const { user } = useAuth();
-  const { darkMode, toggleDarkMode } = useTheme();
+  const { darkMode, toggleTheme } = useTheme();
   const location = useLocation();
 
   const menuItems = [
@@ -269,7 +269,7 @@ function MobileMenu({ setShowMobileMenu }) {
           {/* Theme Toggle */}
           <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
-              onClick={toggleDarkMode}
+              onClick={toggleTheme}
               className={`flex items-center w-full px-3 py-2 rounded-lg text-sm font-medium ${darkMode ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}
             >
               <i className={`fas ${darkMode ? 'fa-sun' : 'fa-moon'} w-5 h-5 mr-3`}></i>
