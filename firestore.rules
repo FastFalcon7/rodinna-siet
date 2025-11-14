@@ -7,8 +7,8 @@ service cloud.firestore {
 
     // Konfigurácia - whitelist emailov
     match /config/{configId} {
-      // Každý môže čítať whitelist (potrebné pre registráciu)
-      allow read: if true;
+      // Len prihlásení používatelia môžu čítať whitelist
+      allow read: if request.auth != null;
       // Len admin môže upravovať whitelist
       allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
@@ -24,9 +24,16 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null;
-      // Update pre reakcie a komentáre - povoliť všetkým autentifikovaným
+      // Update - len vlastník môže meniť obsah, všetci môžu pridávať reakcie/komentáre
+      allow update: if request.auth != null && (
+        // Vlastník môže upraviť čokoľvek
+        resource.data.author.uid == request.auth.uid ||
+        // Iní môžu len pridávať do reactions a comments polí (nie ich mazať/meniť)
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions', 'comments', 'likes']) &&
+         request.resource.data.reactions.size() >= resource.data.reactions.size() &&
+         request.resource.data.comments.size() >= resource.data.comments.size())
+      );
       // Delete len vlastník alebo admin
-      allow update: if request.auth != null;
       allow delete: if request.auth != null &&
         (resource.data.author.uid == request.auth.uid ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');

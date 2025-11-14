@@ -19,8 +19,12 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:rules": "npm run test:rules:firestore && npm run test:rules:storage",
+    "test:rules:firestore": "mocha tests/firestore.rules.test.js --exit",
+    "test:rules:storage": "mocha tests/storage.rules.test.js --exit",
     "eject": "react-scripts eject",
-    "deploy": "npm run build && firebase deploy"
+    "deploy": "npm run build && firebase deploy",
+    "emulators:start": "firebase emulators:start --only firestore,storage"
   },
   "eslintConfig": {
     "extends": [
@@ -41,7 +45,9 @@
     ]
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "autoprefixer": "^10.4.21",
+    "mocha": "^10.8.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17"
   }
