@@ -20,6 +20,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:rules": "npm run test:rules:firestore && npm run test:rules:storage",
+    "test:rules:auto": "node run-tests.js",
     "test:rules:firestore": "mocha tests/firestore.rules.test.js --exit",
     "test:rules:storage": "mocha tests/storage.rules.test.js --exit",
     "eject": "react-scripts eject",
