@@ -31,6 +31,7 @@ function Feed() {
   const [editingPost, setEditingPost] = useState(null);
   const [editContent, setEditContent] = useState('');
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [longPressTimer, setLongPressTimer] = useState(null);
 
   // Nové stavy pre modal
   const [showNewPostModal, setShowNewPostModal] = useState(false);
@@ -202,6 +203,20 @@ function Feed() {
       } finally {
         setIsSubmitting(false);
       }
+    }
+  };
+
+  const handleLongPressStart = (postId) => {
+    const timer = setTimeout(() => {
+      setShowEmojiPicker(postId);
+    }, 500); // 500ms pre long press
+    setLongPressTimer(timer);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      setLongPressTimer(null);
     }
   };
 
@@ -571,7 +586,19 @@ function Feed() {
                 </div>
               </div>
             ) : (
-              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+              <p
+                onTouchStart={() => handleLongPressStart(post.id)}
+                onTouchEnd={handleLongPressEnd}
+                onMouseDown={() => handleLongPressStart(post.id)}
+                onMouseUp={handleLongPressEnd}
+                onMouseLeave={handleLongPressEnd}
+                className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} cursor-pointer`}
+                style={{
+                  WebkitTapHighlightColor: 'transparent',
+                  touchAction: 'manipulation',
+                  userSelect: 'none'
+                }}
+              >
                 {post.content}
               </p>
             )}
@@ -590,14 +617,34 @@ function Feed() {
             <img
               src={post.image}
               alt="Post"
-              className="w-full max-h-96 object-cover"
+              className="w-full max-h-96 object-cover cursor-pointer"
+              onTouchStart={() => handleLongPressStart(post.id)}
+              onTouchEnd={handleLongPressEnd}
+              onMouseDown={() => handleLongPressStart(post.id)}
+              onMouseUp={handleLongPressEnd}
+              onMouseLeave={handleLongPressEnd}
+              style={{
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+                userSelect: 'none'
+              }}
             />
           )}
           {post.video && (
             <video
               src={post.video}
               controls
-              className="w-full max-h-96"
+              className="w-full max-h-96 cursor-pointer"
+              onTouchStart={() => handleLongPressStart(post.id)}
+              onTouchEnd={handleLongPressEnd}
+              onMouseDown={() => handleLongPressStart(post.id)}
+              onMouseUp={handleLongPressEnd}
+              onMouseLeave={handleLongPressEnd}
+              style={{
+                WebkitTapHighlightColor: 'transparent',
+                touchAction: 'manipulation',
+                userSelect: 'none'
+              }}
             />
           )}
 
@@ -622,32 +669,29 @@ function Feed() {
             );
           })()}
 
-          {/* Actions */}
-          <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
-            {/* Like button - hide for own posts */}
-            {post.author.uid !== user.uid && (
-              <button
-                onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
-                className={`flex items-center space-x-2 ${darkMode ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800'}`}
-              >
-                <i className="far fa-thumbs-up"></i>
-                <span>Páči sa mi</span>
-              </button>
-            )}
-
-            {showEmojiPicker === post.id && (
-              <div className="absolute bottom-12 left-4 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2 flex space-x-2 z-10">
-                {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => (
+          {/* Emoji Picker - zobrazí sa po long press (len pre cudzích užívateľov) */}
+          {showEmojiPicker === post.id && post.author.uid !== user.uid && (
+            <div className="px-4 pt-2 relative">
+              <div className="bg-white dark:bg-gray-700 rounded-lg shadow-xl p-2 flex space-x-2 z-20 border border-gray-200 dark:border-gray-600 inline-flex">
+                {['👍', '❤️', '😂', '😮', '😢', '👏', '🎉'].map(emoji => (
                   <button
                     key={emoji}
                     onClick={() => handleReaction(post.id, emoji)}
                     className="text-2xl hover:scale-125 transition-transform"
+                    style={{
+                      WebkitTapHighlightColor: 'transparent',
+                      touchAction: 'manipulation'
+                    }}
                   >
                     {emoji}
                   </button>
                 ))}
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
 
             <button
               onClick={() => toggleComments(post.id)}

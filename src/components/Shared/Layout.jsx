@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useLocation, Link } from 'react-router-dom';
 
-const APP_VERSION = 'v0.01';
+const APP_VERSION = 'v0001';
 
 function Layout({ children }) {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
