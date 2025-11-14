@@ -378,11 +378,13 @@ function Feed() {
       await updateDoc(postRef, {
         comments: arrayUnion(comment)
       });
+
+      // Len ak request uspeje, vyčisti input
+      setNewComment(prev => ({ ...prev, [postId]: '' }));
     } catch (error) {
       console.error('Error adding comment:', error);
+      alert('Chyba pri pridávaní komentára. Skúste to znova.');
     }
-
-    setNewComment(prev => ({ ...prev, [postId]: '' }));
   };
 
   const handleShare = (postId) => {
@@ -498,6 +500,19 @@ function Feed() {
       ) : (
         posts.map(post => (
         <div key={post.id} className={`${darkMode ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-sm mb-4 overflow-hidden`}>
+          {/* Long press wrapper - len pre cudzích užívateľov */}
+          <div
+            onTouchStart={post.author.uid !== user.uid ? () => handleLongPressStart(post.id) : undefined}
+            onTouchEnd={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
+            onMouseDown={post.author.uid !== user.uid ? () => handleLongPressStart(post.id) : undefined}
+            onMouseUp={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
+            onMouseLeave={post.author.uid !== user.uid ? handleLongPressEnd : undefined}
+            style={post.author.uid !== user.uid ? {
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'manipulation',
+              userSelect: 'none'
+            } : {}}
+          >
           {/* Post Header */}
           <div className="p-4">
             <div className="flex items-center justify-between">
@@ -586,19 +601,7 @@ function Feed() {
                 </div>
               </div>
             ) : (
-              <p
-                onTouchStart={() => handleLongPressStart(post.id)}
-                onTouchEnd={handleLongPressEnd}
-                onMouseDown={() => handleLongPressStart(post.id)}
-                onMouseUp={handleLongPressEnd}
-                onMouseLeave={handleLongPressEnd}
-                className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'} cursor-pointer`}
-                style={{
-                  WebkitTapHighlightColor: 'transparent',
-                  touchAction: 'manipulation',
-                  userSelect: 'none'
-                }}
-              >
+              <p className={`mt-4 ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                 {post.content}
               </p>
             )}
@@ -617,34 +620,14 @@ function Feed() {
             <img
               src={post.image}
               alt="Post"
-              className="w-full max-h-96 object-cover cursor-pointer"
-              onTouchStart={() => handleLongPressStart(post.id)}
-              onTouchEnd={handleLongPressEnd}
-              onMouseDown={() => handleLongPressStart(post.id)}
-              onMouseUp={handleLongPressEnd}
-              onMouseLeave={handleLongPressEnd}
-              style={{
-                WebkitTapHighlightColor: 'transparent',
-                touchAction: 'manipulation',
-                userSelect: 'none'
-              }}
+              className="w-full max-h-96 object-cover"
             />
           )}
           {post.video && (
             <video
               src={post.video}
               controls
-              className="w-full max-h-96 cursor-pointer"
-              onTouchStart={() => handleLongPressStart(post.id)}
-              onTouchEnd={handleLongPressEnd}
-              onMouseDown={() => handleLongPressStart(post.id)}
-              onMouseUp={handleLongPressEnd}
-              onMouseLeave={handleLongPressEnd}
-              style={{
-                WebkitTapHighlightColor: 'transparent',
-                touchAction: 'manipulation',
-                userSelect: 'none'
-              }}
+              className="w-full max-h-96"
             />
           )}
 
@@ -689,6 +672,8 @@ function Feed() {
               </div>
             </div>
           )}
+          </div>
+          {/* End of long press wrapper */}
 
           {/* Actions */}
           <div className={`p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-around relative`}>
