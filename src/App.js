@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -14,10 +14,28 @@ import Albums from './components/Albums/Albums';
 import FamilyMembers from './components/FamilyMembers/FamilyMembers';
 import Settings from './components/Settings/Settings';
 import LoadingScreen from './components/Shared/LoadingScreen';
+import CommandPalette from './components/Shared/CommandPalette';
 
 function AppContent() {
   const { user, loading } = useAuth();
   const { darkMode } = useTheme();
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+
+  // Keyboard listener pre Cmd/Ctrl + K
+  const handleKeyDown = useCallback((e) => {
+    // Cmd (Mac) alebo Ctrl (Windows/Linux) + K
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      setIsCommandPaletteOpen((prev) => !prev);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [user, handleKeyDown]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -40,6 +58,12 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Layout>
+
+      {/* Command Palette - Global */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
     </Router>
   );
 }
