@@ -3,6 +3,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOnlineStatus } from '../../contexts/OnlineStatusContext';
 import { db, storage } from '../../firebase/config';
+import EmojiReactionPicker from '../Shared/EmojiReactionPicker';
 import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -21,6 +22,7 @@ function Chat() {
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [userJustSentMessage, setUserJustSentMessage] = useState(false);
+  const [reactionPickerAnchor, setReactionPickerAnchor] = useState(null);
 
   const { darkMode } = useTheme();
   const { user } = useAuth();
@@ -351,14 +353,36 @@ function Chat() {
     }
   };
 
-  const handleLongPressStart = (messageId) => {
+  const handleLongPressStart = (e, messageId, targetElement) => {
+    // Prevent iOS text selection menu a všetky default actions
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Zabráň kontextovému menu
+    if (e && e.type === 'contextmenu') {
+      return;
+    }
+
     const timer = setTimeout(() => {
       setShowReactionPicker(messageId);
+      setReactionPickerAnchor(targetElement);
+
+      // Haptic feedback na mobile
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
     }, 500); // 500ms pre long press
     setLongPressTimer(timer);
   };
 
-  const handleLongPressEnd = () => {
+  const handleLongPressEnd = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       setLongPressTimer(null);
@@ -459,11 +483,19 @@ function Chat() {
 
                   {/* Message bubble */}
                   <div
-                    onTouchStart={() => handleLongPressStart(message.id)}
-                    onTouchEnd={handleLongPressEnd}
-                    onMouseDown={() => handleLongPressStart(message.id)}
-                    onMouseUp={handleLongPressEnd}
-                    onMouseLeave={handleLongPressEnd}
+                    ref={(el) => {
+                      // Store ref for emoji picker positioning
+                      if (el && !isMe) {
+                        el.dataset.messageId = message.id;
+                      }
+                    }}
+                    onTouchStart={!isMe ? (e) => handleLongPressStart(e, message.id, e.currentTarget) : undefined}
+                    onTouchEnd={!isMe ? handleLongPressEnd : undefined}
+                    onTouchCancel={!isMe ? handleLongPressEnd : undefined}
+                    onMouseDown={!isMe ? (e) => handleLongPressStart(e, message.id, e.currentTarget) : undefined}
+                    onMouseUp={!isMe ? handleLongPressEnd : undefined}
+                    onMouseLeave={!isMe ? handleLongPressEnd : undefined}
+                    onContextMenu={!isMe ? (e) => e.preventDefault() : undefined}
                     className={`relative px-4 py-2 rounded-2xl shadow-sm ${
                       isMe
                         ? 'bg-indigo-600 text-white rounded-br-sm'
@@ -471,7 +503,13 @@ function Chat() {
                     }`}
                     style={{
                       WebkitTapHighlightColor: 'transparent',
-                      touchAction: 'manipulation'
+                      WebkitUserSelect: isMe ? 'auto' : 'none',
+                      WebkitTouchCallout: isMe ? 'auto' : 'none',
+                      MozUserSelect: isMe ? 'auto' : 'none',
+                      msUserSelect: isMe ? 'auto' : 'none',
+                      touchAction: 'manipulation',
+                      userSelect: isMe ? 'auto' : 'none',
+                      cursor: isMe ? 'auto' : 'pointer'
                     }}
                   >
                     {!isMe && (
@@ -528,25 +566,6 @@ function Chat() {
                         </button>
                       )}
                     </div>
-
-                    {/* Reaction picker */}
-                    {showReactionPicker === message.id && !isMe && (
-                      <div className="absolute bottom-full mb-2 left-0 bg-white dark:bg-gray-700 rounded-lg shadow-lg p-2 flex space-x-2 z-10">
-                        {['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥'].map(emoji => (
-                          <button
-                            key={emoji}
-                            onClick={() => handleReaction(message.id, emoji)}
-                            className="text-2xl hover:scale-125 transition-transform"
-                            style={{
-                              WebkitTapHighlightColor: 'transparent',
-                              touchAction: 'manipulation'
-                            }}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   {/* Reactions display */}
@@ -783,6 +802,20 @@ function Chat() {
             />
           )}
         </div>
+      )}
+
+      {/* Global Emoji Reaction Picker */}
+      {showReactionPicker && reactionPickerAnchor && (
+        <EmojiReactionPicker
+          isVisible={true}
+          anchorElement={reactionPickerAnchor}
+          emojis={['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥']}
+          onSelect={(emoji) => handleReaction(showReactionPicker, emoji)}
+          onClose={() => {
+            setShowReactionPicker(null);
+            setReactionPickerAnchor(null);
+          }}
+        />
       )}
     </div>
   );
